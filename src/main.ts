@@ -3,7 +3,7 @@ import {
   StrangePropertiesSettings,
   DEFAULT_SETTINGS,
   StrangePropertiesSettingTab,
-  ConversionRule,
+  PropertyClassRule,
 } from "./settings";
 
 const CLASS_ATTR = "data-property-classes";
@@ -153,7 +153,7 @@ export default class StrangePropertiesPlugin extends Plugin {
   ): Set<string> {
     const classes = new Set<string>();
 
-    for (const rule of this.settings.rules) {
+    for (const rule of this.settings.propertyClasses) {
       if (!rule.enabled) continue;
       if (rule.scope !== "both" && rule.scope !== leafType) continue;
 
@@ -170,7 +170,7 @@ export default class StrangePropertiesPlugin extends Plugin {
     return classes;
   }
 
-  private buildClassName(rule: ConversionRule, value: string): string {
+  private buildClassName(rule: PropertyClassRule, value: string): string {
     let cls = rule.pattern
       .replace("{key}", rule.property)
       .replace("{value}", value);
