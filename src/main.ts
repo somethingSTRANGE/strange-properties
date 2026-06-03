@@ -4,6 +4,8 @@ import {
   DEFAULT_SETTINGS,
   StrangePropertiesSettingTab,
   PropertyClassRule,
+  PropertySection,
+  SectionHeaderRule,
 } from "./settings";
 
 const CLASS_ATTR = "data-property-classes";
@@ -109,6 +111,7 @@ export default class StrangePropertiesPlugin extends Plugin {
         this.injectPropertyValues(contentEl, frontmatter);
       }
       this.applyClasses(contentEl, this.resolveClasses(frontmatter, leafType));
+      this.injectSectionHeaders(contentEl, frontmatter);
     });
   }
 
@@ -132,9 +135,16 @@ export default class StrangePropertiesPlugin extends Plugin {
       const contentEl = this.getContentEl(leaf);
       if (!contentEl) return;
 
-      const observer = new MutationObserver(() => this.updateLeaf(leaf));
-      // Watch for child elements added/removed only — attribute changes from our
-      // own injection must not retrigger the observer.
+      const observer = new MutationObserver((mutations) => {
+        // Ignore mutations caused entirely by our own section header elements
+        // to prevent an inject → observe → inject loop.
+        const isOwnMutation = mutations.every((m) =>
+          [...m.addedNodes, ...m.removedNodes].every(
+            (n) => n instanceof HTMLElement && n.hasAttribute("data-sp-section")
+          )
+        );
+        if (!isOwnMutation) this.updateLeaf(leaf);
+      });
       observer.observe(contentEl, { childList: true, subtree: true });
       this.observers.set(leaf, observer);
     });
@@ -233,6 +243,74 @@ export default class StrangePropertiesPlugin extends Plugin {
     for (const el of els) el.removeAttribute("data-property-value");
   }
 
+  // ─── Section headers ─────────────────────────────────────────────────────
+
+  private injectSectionHeaders(
+    contentEl: HTMLElement,
+    frontmatter: Record<string, unknown>
+  ) {
+    this.clearSectionHeaders(contentEl);
+
+    const propertiesEl = contentEl.querySelector(".metadata-properties");
+    if (!propertiesEl) return;
+
+    const propertyEls = propertiesEl.querySelectorAll<HTMLElement>(
+      ".metadata-property[data-property-key]"
+    );
+    if (!propertyEls.length) return;
+
+    for (const rule of this.settings.sectionHeaders) {
+      if (!rule.enabled) continue;
+      if (!this.sectionHeaderRuleMatches(rule, frontmatter)) continue;
+
+      const propertyToSection = new Map<string, PropertySection>();
+      for (const section of rule.sections) {
+        for (const prop of section.properties) {
+          propertyToSection.set(prop, section);
+        }
+      }
+
+      let lastSection: PropertySection | null = null;
+
+      for (const el of propertyEls) {
+        const key = el.getAttribute("data-property-key")!;
+        const section = propertyToSection.get(key) ?? null;
+
+        if (section && section !== lastSection) {
+          propertiesEl.insertBefore(this.createSectionHeaderEl(section.header), el);
+        }
+
+        lastSection = section;
+      }
+    }
+  }
+
+  private sectionHeaderRuleMatches(
+    rule: SectionHeaderRule,
+    frontmatter: Record<string, unknown>
+  ): boolean {
+    if (!rule.condition) return true;
+    const raw = frontmatter[rule.condition.property];
+    const values = Array.isArray(raw) ? raw : [raw];
+    return values.some((v) => String(v ?? "") === rule.condition!.value);
+  }
+
+  private createSectionHeaderEl(label: string): HTMLElement {
+    const el = createEl("div", { cls: "sp-section-header" });
+    el.setAttribute("data-sp-section", "");
+    el.setAttribute("data-sp-section-label", this.sanitizeSectionLabel(label));
+    el.textContent = label;
+    return el;
+  }
+
+  private sanitizeSectionLabel(label: string): string {
+    return label.toLowerCase().replace(/[\s/#]/g, "-").slice(0, 64);
+  }
+
+  private clearSectionHeaders(contentEl: HTMLElement) {
+    contentEl.querySelectorAll("[data-sp-section]").forEach((el) => el.remove());
+  }
+
   // ─── Cleanup ──────────────────────────────────────────────────────────────
 
   private clearLeaf(leaf: WorkspaceLeaf) {
@@ -240,6 +318,7 @@ export default class StrangePropertiesPlugin extends Plugin {
     if (!contentEl) return;
     this.clearClasses(contentEl);
     this.clearPropertyValues(contentEl);
+    this.clearSectionHeaders(contentEl);
   }
 
   // ─── Value normalization ──────────────────────────────────────────────────
