@@ -1,0 +1,18 @@
+{
+  "name": "strange-properties",
+  "version": "1.0.0",
+  "description": "Enhances Obsidian's property panel with value-based CSS targeting, class injection, section headers, and empty-property filtering.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production"
+  },
+  "devDependencies": {
+    "@types/node": "^16.11.6",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "0.17.3",
+    "obsidian": "github:obsidianmd/obsidian-api",
+    "tslib": "2.4.0",
+    "typescript": "4.7.4"
+  }
+}
