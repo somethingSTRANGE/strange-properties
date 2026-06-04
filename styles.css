@@ -1,0 +1,29 @@
+/* Strange Properties */
+
+/* Footer row containing "Add property" and the hide-empty toggle */
+.sp-property-footer {
+  display: flex;
+  justify-content: space-between;
+}
+
+/* Hides empty property rows when the toggle is active */
+.metadata-container.sp-hide-empty .metadata-property.sp-empty {
+  display: none;
+}
+
+/* "Add property" button disabled while empty properties are hidden */
+.metadata-add-button.sp-add-disabled {
+  opacity: 0.35;
+  pointer-events: none;
+  cursor: default;
+}
+
+/* Section headers injected between property groups */
+.sp-section-header {
+  font-size: var(--font-smaller);
+  font-weight: var(--font-semibold);
+  color: var(--text-muted);
+  padding: var(--size-4-3) 0 var(--size-4-1);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}

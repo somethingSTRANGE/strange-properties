@@ -22,6 +22,7 @@ const deployPlugin = {
     build.onEnd(() => {
       fs.mkdirSync(vaultPluginDir, { recursive: true });
       fs.copyFileSync("manifest.json", path.join(vaultPluginDir, "manifest.json"));
+      fs.copyFileSync("styles.css", path.join(vaultPluginDir, "styles.css"));
     });
   },
 };
@@ -29,6 +30,9 @@ const deployPlugin = {
 const context = await esbuild.context({
   banner: { js: banner },
   entryPoints: ["src/main.ts"],
+  define: {
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+  },
   bundle: true,
   external: [
     "obsidian",

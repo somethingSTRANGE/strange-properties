@@ -28,7 +28,6 @@ export interface StrangePropertiesSettings {
   injectPropertyValues: boolean;
   sanitize: boolean;
   hideEmpty: boolean;
-  hideEmptyStyle: "icon" | "icon-text" | "text";
   hideEmptyActive: boolean;
 }
 
@@ -40,7 +39,6 @@ export const DEFAULT_SETTINGS: StrangePropertiesSettings = {
   injectPropertyValues: true,
   sanitize: true,
   hideEmpty: true,
-  hideEmptyStyle: "icon-text",
   hideEmptyActive: false,
 };
 
