@@ -2,7 +2,7 @@
   "id": "strange-properties",
   "name": "Strange Properties",
   "version": "1.0.0",
-  "minAppVersion": "1.4.0",
+  "minAppVersion": "1.11.0",
   "description": "Enhances Obsidian's property panel with value-based CSS targeting, configurable class injection, section headers, and empty-property filtering.",
   "author": "Michael Ryan",
   "authorUrl": "https://somethingstrange.com",

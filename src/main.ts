@@ -275,8 +275,8 @@ export default class StrangePropertiesPlugin extends Plugin {
   }
 
   private buildClassName(rule: PropertyClassRule, value: string): string {
-    let cls = rule.pattern
-      .replace("{property}", rule.property)
+    let cls = rule.template
+      .replace("{name}", rule.property)
       .replace("{value}", value);
     cls = cls.replace(/[^a-zA-Z0-9_-]/g, "-");
     return cls;
@@ -401,9 +401,18 @@ export default class StrangePropertiesPlugin extends Plugin {
     frontmatter: Record<string, unknown>
   ): boolean {
     if (!rule.condition) return true;
-    const raw = frontmatter[rule.condition.property];
+    const { property, operator, value } = rule.condition;
+    const raw = frontmatter[property];
+
+    if (operator === "exists") return raw !== undefined && raw !== null;
+
     const values = Array.isArray(raw) ? raw : [raw];
-    return values.some((v) => String(v ?? "") === rule.condition!.value);
+    return values.some((v) => {
+      const str = String(v ?? "");
+      if (operator === "contains") return str.includes(value);
+      if (operator === "starts-with") return str.startsWith(value);
+      return str === value;
+    });
   }
 
   private createSectionHeaderEl(label: string, id: number): HTMLElement {

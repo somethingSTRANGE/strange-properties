@@ -25,6 +25,28 @@
   cursor: default;
 }
 
+/* Disabled setting row — dims the entire row and blocks interaction */
+.sp-setting-disabled {
+	.setting-item-info,
+	.setting-item-control {
+		opacity: 0.35;
+		pointer-events: none;
+	}
+}
+
+.sp-settings-delete-item {
+	margin-top: 1rem;
+	margin-left: 2rem;
+}
+
+.setting-item.sp-setting-section-property .setting-item-info {
+	display: none;
+}
+
+.setting-item.sp-setting-section-property 	.setting-item-control input {
+	width: 100%;
+}
+
 /* Section headers injected between property groups */
 .sp-section-header {
   font-size: var(--font-smaller);
@@ -33,4 +55,32 @@
   padding: var(--size-4-3) 0 var(--size-4-1);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+.modal {
+	&:has(.sp-settings-modal-level-1) {
+		margin-bottom: 64px;
+	}
+
+	&:has(.sp-settings-modal-level-2) {
+		margin-bottom: 32px;
+		margin-left: 64px;
+	}
+
+	&:has(.sp-settings-modal-level-3) {
+		margin-left: 128px;
+	}
+
+	.setting-item code {
+		background-color: var(--background-primary);
+	}
+
+	.setting-item-description code {
+		padding: 1px 4px;
+	}
+
+	.setting-item-name code {
+		border-radius: 4px;
+		padding: 1px 4px;
+	}
 }
