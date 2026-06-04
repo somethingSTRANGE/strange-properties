@@ -35,7 +35,7 @@ With Strange Properties injecting `data-property-value`, CSS can target property
   [data-property-key="status"] { ... }
 ```
 
-Class injection gives you the same control at the view level. A rule mapping `type` → `property-type-{value}` injects `property-type-character` onto the `view-content` element of any character note:
+Class injection gives you the same control at the view level. A rule mapping `type` → `property-{property}-{value}` injects `property-type-character` onto the `view-content` element of any character note:
 
 ```css
 /* Scope any style to character notes without a sentinel key */
@@ -84,16 +84,14 @@ Settings are stored in `.obsidian/plugins/strange-properties/data.json`. The cur
   "propertyClasses": [
     {
       "property": "type",
-      "pattern": "property-type-{value}",
+      "pattern": "property-{property}-{value}",
       "scope": "both",
       "enabled": true
     }
   ],
   "sectionHeaders": [],
   "injectPropertyValues": true,
-  "sanitize": true,
-  "hideEmpty": true,
-  "hideEmptyStyle": "icon-text",
+  "hideEmptyEnabled": true,
   "hideEmptyActive": false
 }
 ```
@@ -104,14 +102,14 @@ Each rule in `propertyClasses` maps a frontmatter property to a class name patte
 
 | Token | Resolves to |
 |---|---|
-| `{key}` | The frontmatter property name |
+| `{property}` | The frontmatter property name (matches the `property` field of the rule) |
 | `{value}` | The frontmatter property value |
 
 **Scope** controls which leaf types the rule applies to: `"notes"`, `"properties"` (File Properties panel), or `"both"`.
 
 ### Value normalization
 
-When `sanitize` is `true` (default), `data-property-value` is normalized for safe use in CSS selectors:
+`data-property-value` is always normalized for safe use in CSS selectors:
 
 - Wikilinks `[[target|display]]` resolve to the display text; `[[target]]` resolves to the leaf filename
 - Values are lowercased

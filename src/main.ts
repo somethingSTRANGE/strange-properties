@@ -276,7 +276,7 @@ export default class StrangePropertiesPlugin extends Plugin {
 
   private buildClassName(rule: PropertyClassRule, value: string): string {
     let cls = rule.pattern
-      .replace("{key}", rule.property)
+      .replace("{property}", rule.property)
       .replace("{value}", value);
     cls = cls.replace(/[^a-zA-Z0-9_-]/g, "-");
     return cls;
