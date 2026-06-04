@@ -16,11 +16,13 @@ const CLASS_BLACKLIST = new Set(["view-content"]);
 export default class StrangePropertiesPlugin extends Plugin {
   settings: StrangePropertiesSettings;
   private observers = new Map<WorkspaceLeaf, MutationObserver>();
+  private sectionStyleEl: HTMLStyleElement | null = null;
 
   async onload() {
     console.log(`Strange Properties loaded — build ${__BUILD_TIME__}`);
     await this.loadSettings();
     this.addSettingTab(new StrangePropertiesSettingTab(this.app, this));
+    this.updateSectionStylesheet();
 
     this.app.workspace.onLayoutReady(() => {
       this.updateAllLeaves();
@@ -56,6 +58,8 @@ export default class StrangePropertiesPlugin extends Plugin {
   onunload() {
     this.teardownObservers();
     this.app.workspace.iterateAllLeaves((leaf) => this.clearLeaf(leaf));
+    this.sectionStyleEl?.remove();
+    this.sectionStyleEl = null;
   }
 
   // ─── Settings ─────────────────────────────────────────────────────────────
@@ -66,7 +70,31 @@ export default class StrangePropertiesPlugin extends Plugin {
 
   async saveSettings() {
     await this.saveData(this.settings);
+    this.updateSectionStylesheet();
     this.updateAllLeaves();
+  }
+
+  private generateSectionStyles(): string {
+    const lines: string[] = [];
+    let id = 0;
+    for (const rule of this.settings.sectionHeaders) {
+      for (const _section of rule.sections) {
+        lines.push(
+          `.metadata-container.sp-hide-empty .sp-sec-${id}:not(:has(~ .sp-sec-${id}-prop:not(.sp-empty))) { display: none; }`
+        );
+        id++;
+      }
+    }
+    return lines.join("\n");
+  }
+
+  private updateSectionStylesheet() {
+    if (!this.sectionStyleEl) {
+      this.sectionStyleEl = document.createElement("style");
+      this.sectionStyleEl.id = "sp-section-styles";
+      document.head.appendChild(this.sectionStyleEl);
+    }
+    this.sectionStyleEl.textContent = this.generateSectionStyles();
   }
 
   // ─── Leaf helpers ─────────────────────────────────────────────────────────
@@ -250,7 +278,7 @@ export default class StrangePropertiesPlugin extends Plugin {
     let cls = rule.pattern
       .replace("{key}", rule.property)
       .replace("{value}", value);
-    if (this.settings.sanitize) cls = cls.replace(/[^a-zA-Z0-9_-]/g, "-");
+    cls = cls.replace(/[^a-zA-Z0-9_-]/g, "-");
     return cls;
   }
 
@@ -325,47 +353,46 @@ export default class StrangePropertiesPlugin extends Plugin {
     );
     if (!propertyEls.length) return;
 
+    // Build property→section map using global section IDs that match the
+    // generated stylesheet. IDs are assigned by enumerating every section
+    // across every rule in order — disabled/non-matching rules still consume
+    // IDs so the numbering stays aligned with the CSS.
+    // First-rule-wins: a property key can only belong to one section.
+    const propertyToSection = new Map<string, { id: number; header: string }>();
+    const claimedKeys = new Set<string>();
+    let sectionId = 0;
+
     for (const rule of this.settings.sectionHeaders) {
-      if (!rule.enabled) continue;
-      if (!this.sectionHeaderRuleMatches(rule, frontmatter)) continue;
-
-      const propertyToSection = new Map<string, PropertySection>();
       for (const section of rule.sections) {
-        for (const prop of section.properties) {
-          propertyToSection.set(prop, section);
-        }
-      }
-
-      // When hiding empty properties, suppress headers whose section contains
-      // only empty properties — they'd render as orphaned headers with nothing
-      // visible beneath them.
-      const hidingEmpty = this.settings.hideEmpty && this.settings.hideEmptyActive;
-      const sectionsWithContent = new Set<PropertySection>();
-      if (hidingEmpty) {
-        for (const el of propertyEls) {
-          const key = el.getAttribute("data-property-key")!;
-          const section = propertyToSection.get(key);
-          if (section && !this.isEmptyValue(frontmatter[key])) {
-            sectionsWithContent.add(section);
+        const id = sectionId++;
+        if (!rule.enabled || !this.sectionHeaderRuleMatches(rule, frontmatter)) continue;
+        for (const key of section.properties) {
+          if (!claimedKeys.has(key)) {
+            claimedKeys.add(key);
+            propertyToSection.set(key, { id, header: section.header });
           }
         }
       }
+    }
 
-      let lastSection: PropertySection | null = null;
+    if (propertyToSection.size === 0) return;
 
-      for (const el of propertyEls) {
-        const key = el.getAttribute("data-property-key")!;
-        const section = propertyToSection.get(key) ?? null;
+    // Walk properties in DOM order: inject a header at each section start and
+    // mark every member property with its section class so CSS can hide orphaned
+    // headers when hide-empty is active.
+    let lastSectionId: number | null = null;
 
-        if (section && section !== lastSection) {
-          const visible = !hidingEmpty || sectionsWithContent.has(section);
-          if (visible) {
-            propertiesEl.insertBefore(this.createSectionHeaderEl(section.header), el);
-          }
+    for (const el of propertyEls) {
+      const key = el.getAttribute("data-property-key")!;
+      const sec = propertyToSection.get(key) ?? null;
+
+      if (sec) {
+        el.classList.add(`sp-sec-${sec.id}-prop`);
+        if (sec.id !== lastSectionId) {
+          propertiesEl.insertBefore(this.createSectionHeaderEl(sec.header, sec.id), el);
         }
-
-        lastSection = section;
       }
+      lastSectionId = sec ? sec.id : null;
     }
   }
 
@@ -379,20 +406,20 @@ export default class StrangePropertiesPlugin extends Plugin {
     return values.some((v) => String(v ?? "") === rule.condition!.value);
   }
 
-  private createSectionHeaderEl(label: string): HTMLElement {
-    const el = createEl("div", { cls: "sp-section-header" });
+  private createSectionHeaderEl(label: string, id: number): HTMLElement {
+    const el = createEl("div", { cls: `sp-section-header sp-sec-${id}` });
     el.setAttribute("data-sp-section", "");
-    el.setAttribute("data-sp-section-label", this.sanitizeSectionLabel(label));
     el.textContent = label;
     return el;
   }
 
-  private sanitizeSectionLabel(label: string): string {
-    return label.toLowerCase().replace(/[\s/#]/g, "-").slice(0, 64);
-  }
-
   private clearSectionHeaders(contentEl: HTMLElement) {
     contentEl.querySelectorAll("[data-sp-section]").forEach((el) => el.remove());
+    for (const el of contentEl.querySelectorAll<HTMLElement>(".metadata-property[data-property-key]")) {
+      for (const cls of [...el.classList]) {
+        if (/^sp-sec-\d+-prop$/.test(cls)) el.classList.remove(cls);
+      }
+    }
   }
 
   // ─── Hide empty properties ────────────────────────────────────────────────
@@ -429,7 +456,7 @@ export default class StrangePropertiesPlugin extends Plugin {
   private updateHideEmptyContainer(contentEl: HTMLElement) {
     const containerEl =
       contentEl.querySelector<HTMLElement>(".metadata-container") ?? contentEl;
-    const shouldHide = this.settings.hideEmpty && this.settings.hideEmptyActive;
+    const shouldHide = this.settings.hideEmptyEnabled && this.settings.hideEmptyActive;
     const wasHidden = containerEl.classList.contains("sp-hide-empty");
     containerEl.classList.toggle("sp-hide-empty", shouldHide);
     // Force a synchronous layout flush so Electron paints the change immediately.
@@ -447,7 +474,7 @@ export default class StrangePropertiesPlugin extends Plugin {
   }
 
   private injectHideEmptyButton(contentEl: HTMLElement) {
-    if (!this.settings.hideEmpty) {
+    if (!this.settings.hideEmptyEnabled) {
       this.clearHideEmptyButton(contentEl);
       return;
     }
@@ -561,21 +588,19 @@ export default class StrangePropertiesPlugin extends Plugin {
     let str = String(raw).trim();
     if (!str) return null;
 
-    if (this.settings.sanitize) {
-      // [[target|display]] → display
-      str = str.replace(
-        /\[\[[^\]|#]*(?:#[^\]|]*)?\|([^\]]+)\]\]/g,
-        "$1"
-      );
-      // [[target#anchor]] or [[target]] → last path segment
-      str = str.replace(/\[\[([^\]|#]+)(?:#[^\]|]*)?\]\]/g, (_, t: string) =>
-        t.split("/").pop() ?? t
-      );
-      str = str.replace(/\[\[|\]\]/g, "");
-      str = str.toLowerCase();
-      str = str.replace(/[\s/#]/g, "-");
-      str = str.slice(0, 64);
-    }
+    // [[target|display]] → display
+    str = str.replace(
+      /\[\[[^\]|#]*(?:#[^\]|]*)?\|([^\]]+)\]\]/g,
+      "$1"
+    );
+    // [[target#anchor]] or [[target]] → last path segment
+    str = str.replace(/\[\[([^\]|#]+)(?:#[^\]|]*)?\]\]/g, (_, t: string) =>
+      t.split("/").pop() ?? t
+    );
+    str = str.replace(/\[\[|\]\]/g, "");
+    str = str.toLowerCase();
+    str = str.replace(/[\s/#]/g, "-");
+    str = str.slice(0, 64);
 
     return str || null;
   }

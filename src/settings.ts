@@ -26,8 +26,7 @@ export interface StrangePropertiesSettings {
   propertyClasses: PropertyClassRule[];
   sectionHeaders: SectionHeaderRule[];
   injectPropertyValues: boolean;
-  sanitize: boolean;
-  hideEmpty: boolean;
+  hideEmptyEnabled: boolean;
   hideEmptyActive: boolean;
 }
 
@@ -37,8 +36,7 @@ export const DEFAULT_SETTINGS: StrangePropertiesSettings = {
   ],
   sectionHeaders: [],
   injectPropertyValues: true,
-  sanitize: true,
-  hideEmpty: true,
+  hideEmptyEnabled: true,
   hideEmptyActive: false,
 };
 
