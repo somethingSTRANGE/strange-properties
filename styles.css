@@ -14,73 +14,105 @@
 /* "Add property" button disabled while empty properties are hidden */
 .metadata-add-button.sp-add-disabled {
   opacity: 0.35;
-  pointer-events: none;
   cursor: default;
+  pointer-events: none;
 }
 
 /* Disabled state for icon buttons (ExtraButtonComponent.setDisabled) */
 .clickable-icon.is-disabled {
   opacity: 0.25;
-  pointer-events: none;
   cursor: default;
+  pointer-events: none;
 }
 
 /* Disabled setting row — dims the entire row and blocks interaction */
 .sp-setting-disabled {
-	.setting-item-info,
-	.setting-item-control {
-		opacity: 0.35;
-		pointer-events: none;
-	}
+  .setting-item-info,
+  .setting-item-control {
+    opacity: 0.35;
+    pointer-events: none;
+  }
 }
 
 .sp-settings-delete-item {
-	margin-top: 1rem;
-	margin-left: 2rem;
+  margin-top: 1rem;
+  margin-left: 2rem;
 }
 
 .setting-item.sp-setting-section-property .setting-item-info {
-	display: none;
+  display: none;
 }
 
-.setting-item.sp-setting-section-property 	.setting-item-control input {
-	width: 100%;
+.setting-item.sp-setting-section-property .setting-item-control input {
+  width: 100%;
 }
 
-/* Section headers injected between property groups */
+/*
+ *  File Properties panel:
+ *    Hide the bottom borders for all section properties.
+ */
+.metadata-property[class*="sp-sec-"] {
+  .metadata-property-key,
+  .metadata-property-value {
+    border-bottom-color: transparent;
+  }
+
+  /*
+   *  Show bottom borders that precede a section header or those that are the last child.
+   *
+  &:has(+ .sp-section-header),
+  &:last-child {
+    .metadata-property-key,
+    .metadata-property-value {
+      border-bottom-color: var(--metadata-divider-color);
+    }
+  }
+  */
+}
+
+/*
+ *  Section headers injected between property groups
+ */
 .sp-section-header {
-  font-size: var(--font-smaller);
-  font-weight: var(--font-semibold);
-  color: var(--text-muted);
-  padding: var(--size-4-3) 0 var(--size-4-1);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  margin-top: 1rem;
+  margin-left: 0.25rem;
+  border-bottom: 1px solid var(--metadata-divider-color);
+  font-size: calc(var(--font-text-size) - 2px);
+  font-weight: 600;
+  line-height: 1;
 }
 
+/*
+ *  Modal settings panel
+ *    Use margins to offset each modal level a bit so it doesn't overlap the previous modal level.
+ */
 .modal {
-	&:has(.sp-settings-modal-level-1) {
-		margin-bottom: 64px;
-	}
+  &:has(.sp-settings-modal-level-1) {
+    margin-bottom: 64px;
+  }
 
-	&:has(.sp-settings-modal-level-2) {
-		margin-bottom: 32px;
-		margin-left: 64px;
-	}
+  &:has(.sp-settings-modal-level-2) {
+    margin-bottom: 32px;
+    margin-left: 64px;
+  }
 
-	&:has(.sp-settings-modal-level-3) {
-		margin-left: 128px;
-	}
+  &:has(.sp-settings-modal-level-3) {
+    margin-left: 128px;
+  }
 
-	.setting-item code {
-		background-color: var(--background-primary);
-	}
+  /*
+   *  Code styling for settings modal panels
+   */
+  .setting-item code {
+    background-color: var(--background-primary);
+  }
 
-	.setting-item-description code {
-		padding: 1px 4px;
-	}
+  .setting-item-description code {
+    padding: 1px 4px;
+  }
 
-	.setting-item-name code {
-		border-radius: 4px;
-		padding: 1px 4px;
-	}
+  .setting-item-name code {
+    padding: 1px 4px;
+    border-radius: 4px;
+  }
 }
