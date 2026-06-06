@@ -6,5 +6,10 @@
   "description": "Enhances Obsidian's property panel with value-based CSS targeting, configurable class injection, section headers, and empty-property filtering.",
   "author": "Michael Ryan",
   "authorUrl": "https://somethingstrange.com",
+  "fundingUrl": {
+    "GitHub Sponsor": "https://github.com/sponsors/somethingSTRANGE",
+    "Buy Me a Coffee": "https://buymeacoffee.com/strange",
+    "Ko-fi": "https://ko-fi.com/somethingstrange"
+  },
   "isDesktopOnly": false
 }

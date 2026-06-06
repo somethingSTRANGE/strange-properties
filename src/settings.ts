@@ -469,6 +469,8 @@ export class StrangePropertiesSettingTab extends PluginSettingTab {
         const { containerEl } = this;
         containerEl.empty();
 
+        this.addBanner(containerEl);
+
         // ── Global ────────────────────────────────────────────────────────────
 
         new SettingGroup(containerEl)
@@ -693,6 +695,68 @@ export class StrangePropertiesSettingTab extends PluginSettingTab {
                     })
                 )
             );
+        }
+    }
+
+    private addBanner(containerEl: HTMLElement) {
+        const url = "https://github.com/somethingSTRANGE/strange-properties"; // this.plugin.manifest.authorUrl;
+        const desc = `<div class="sp-settings-banner-meta">Version: ${this.plugin.manifest.version}</div>`
+                     + `<div class="sp-settings-banner-meta">By ${this.plugin.manifest.author}</div>`
+                     + `<div class="sp-settings-banner-meta">Repository: <a target="_blank" rel="noopener" href="${url}">${url}</a></div>`
+                     + `<div class="sp-settings-banner-desc">${this.plugin.manifest.description}</div>`;
+
+        const rawFunding = this.plugin.fundingUrl;
+        console.log(rawFunding);
+
+        const fundingLinks: { label: string; url: string }[] =
+            !rawFunding ? [] :
+                typeof rawFunding === 'string' ? [{
+                        label: `Donate to support ${this.plugin.manifest.name}`,
+                        url: rawFunding
+                    }] :
+                    Object.entries(rawFunding).map(([label, url]) => ({ label, url }));
+        console.log(fundingLinks);
+
+        const banner = new Setting(containerEl)
+            .setClass("sp-settings-banner")
+            .setName(this.plugin.manifest.name)
+            .setDesc(sanitizeHTMLToDom(desc));
+
+        banner.addExtraButton(b => b
+                .setIcon("refresh-cw").setTooltip(`Reload plugin`)
+                .onClick(() => {
+                    const id = this.plugin.manifest.id;
+                    const plugins = (this.app as any).plugins;
+                    plugins.disablePlugin(id)
+                        .then(() => plugins.enablePlugin(id))
+                        .then(() => (this.app as any).setting.openTabById(id));
+                })
+            )
+            .addExtraButton(b => b
+                .setIcon("folder-open").setTooltip(`Open plugin folder`)
+                .onClick(() => {
+                    (this.app as any).showInFolder(
+                        this.plugin.manifest.dir + "/manifest.json"
+                    );
+                })
+            );
+
+        fundingLinks.forEach(({ label, url }, i) => {
+            console.log(label, url);
+            banner.addExtraButton(b => {
+                b.setIcon("heart").setTooltip(label)
+                    .then(b => b.extraSettingsEl.classList.add('sp-funding-button'))
+                    .onClick(() => window.open(url, '_blank'));
+            });
+        });
+
+
+        if (fundingLinks.length > 0) {
+            const first = banner.controlEl.querySelector('.sp-funding-button');
+            const wrapper = banner.controlEl.createDiv({ cls: 'sp-funding-buttons' });
+            wrapper.innerText = "Give support";
+            first!.before(wrapper);
+            banner.controlEl.querySelectorAll('.sp-funding-button').forEach(b => wrapper.appendChild(b));
         }
     }
 }
