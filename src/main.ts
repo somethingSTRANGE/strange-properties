@@ -12,9 +12,15 @@ declare const __BUILD_TIME__: string;
 const CLASS_ATTR = "data-property-classes";
 const CLASS_BLACKLIST = new Set(["view-content"]);
 
+interface ResolvedEnumEntry {
+    storedValue: string | number;
+    displayLabel: string;
+}
+
 export default class StrangePropertiesPlugin extends Plugin {
     settings: StrangePropertiesSettings;
     fundingUrl: string | Record<string, string> | undefined;
+    private enumCache = new Map<string, ResolvedEnumEntry[]>();
     private observers = new Map<WorkspaceLeaf, MutationObserver>();
     private sectionStyleEl: HTMLStyleElement | null = null;
 
@@ -22,6 +28,7 @@ export default class StrangePropertiesPlugin extends Plugin {
         console.log(`Strange Properties loaded — build ${__BUILD_TIME__}`);
         await this.loadSettings();
         await this.loadFundingUrl();
+        this.buildEnumCache();
         this.addSettingTab(new StrangePropertiesSettingTab(this.app, this));
         this.updateSectionStylesheet();
 
@@ -71,6 +78,7 @@ export default class StrangePropertiesPlugin extends Plugin {
 
     async saveSettings() {
         await this.saveData(this.settings);
+        this.buildEnumCache();
         this.updateSectionStylesheet();
         this.updateAllLeaves();
     }
@@ -82,6 +90,29 @@ export default class StrangePropertiesPlugin extends Plugin {
             );
             this.fundingUrl = JSON.parse(raw).fundingUrl;
         } catch {
+        }
+    }
+
+    private buildEnumCache() {
+        this.enumCache.clear();
+        for (const assoc of this.settings.enumAssociations) {
+            const def = this.settings.staticEnums.find(e => e.id === assoc.enumId);
+            if (!def) continue;
+            const entries: ResolvedEnumEntry[] = [];
+            for (const entry of def.entries) {
+                if (assoc.storeAs === 'text' && entry.enum_text !== undefined) {
+                    entries.push({
+                        storedValue: entry.enum_text,
+                        displayLabel: entry.enum_label ?? entry.enum_text,
+                    });
+                } else if (assoc.storeAs === 'number' && entry.enum_number !== undefined) {
+                    entries.push({
+                        storedValue: entry.enum_number,
+                        displayLabel: entry.enum_label ?? String(entry.enum_number),
+                    });
+                }
+            }
+            if (entries.length > 0) this.enumCache.set(assoc.property, entries);
         }
     }
 
@@ -133,13 +164,15 @@ export default class StrangePropertiesPlugin extends Plugin {
     private applyLeafUpdates(
         contentEl: HTMLElement,
         frontmatter: Record<string, unknown>,
-        leafType: "notes" | "properties"
+        leafType: "notes" | "properties",
+        file: TFile
     ) {
         if (this.settings.injectPropertyValues) {
             this.injectPropertyValues(contentEl, frontmatter);
         }
         this.applyClasses(contentEl, this.resolveClasses(frontmatter, leafType));
         this.injectSectionHeaders(contentEl, frontmatter);
+        this.injectEnumDropdowns(contentEl, frontmatter, file);
         this.markEmptyProperties(contentEl, frontmatter);
         this.updateHideEmptyContainer(contentEl);
         this.injectHideEmptyButton(contentEl);
@@ -164,7 +197,7 @@ export default class StrangePropertiesPlugin extends Plugin {
         // Defer one animation frame so Obsidian can finish rendering property
         // elements before we query and modify them.
         activeWindow.requestAnimationFrame(() => {
-            this.applyLeafUpdates(contentEl, frontmatter, leafType);
+            this.applyLeafUpdates(contentEl, frontmatter, leafType, file);
         });
     }
 
@@ -182,13 +215,23 @@ export default class StrangePropertiesPlugin extends Plugin {
 
     private setupObservers() {
         this.app.workspace.iterateAllLeaves((leaf) => {
-            if (leaf.view.getViewType() !== "file-properties") return;
+            if (!this.getLeafType(leaf)) return;
             if (this.observers.has(leaf)) return;
 
             const contentEl = this.getContentEl(leaf);
             if (!contentEl) return;
 
             const observer = new MutationObserver((mutations) => {
+                // For MarkdownView: skip mutations outside .metadata-container so
+                // CodeMirror editor changes don't trigger re-injection on every keystroke.
+                if (leaf.view instanceof MarkdownView) {
+                    const inMetadata = mutations.some(m =>
+                        m.target instanceof HTMLElement &&
+                        m.target.closest('.metadata-container') !== null
+                    );
+                    if (!inMetadata) return;
+                }
+
                 // Ignore mutations caused entirely by our own injected elements.
                 const isOwnMutation = (() => {
                     // If our wrapper was ADDED in this batch, every mutation is ours —
@@ -204,6 +247,15 @@ export default class StrangePropertiesPlugin extends Plugin {
                         )
                     );
                     if (wrapperWasAdded) return true;
+
+                    const enumSelectWasAdded = mutations.some((m) =>
+                        [...m.addedNodes].some(
+                            (n) =>
+                                n instanceof HTMLElement &&
+                                n.classList.contains("sp-enum-select")
+                        )
+                    );
+                    if (enumSelectWasAdded) return true;
 
                     // Section headers: treat as own only when we ADDED headers in this
                     // batch. A batch of pure removals means Obsidian cleaned up our
@@ -247,7 +299,7 @@ export default class StrangePropertiesPlugin extends Plugin {
                 if (file && observerContentEl && leafType) {
                     const frontmatter =
                         this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
-                    this.applyLeafUpdates(observerContentEl, frontmatter, leafType);
+                    this.applyLeafUpdates(observerContentEl, frontmatter, leafType, file);
                 }
             });
             observer.observe(contentEl, { childList: true, subtree: true });
@@ -354,15 +406,15 @@ export default class StrangePropertiesPlugin extends Plugin {
         contentEl: HTMLElement,
         frontmatter: Record<string, unknown>
     ) {
-        this.clearSectionHeaders(contentEl);
-
         const propertiesEl = contentEl.querySelector(".metadata-properties");
-        if (!propertiesEl) return;
+        if (!propertiesEl) {
+            this.clearSectionHeaders(contentEl);
+            return;
+        }
 
         const propertyEls = propertiesEl.querySelectorAll<HTMLElement>(
             ".metadata-property[data-property-key]"
         );
-        if (!propertyEls.length) return;
 
         // Build property→section map using global section IDs that match the
         // generated stylesheet. IDs are assigned by enumerating every section
@@ -386,24 +438,44 @@ export default class StrangePropertiesPlugin extends Plugin {
             }
         }
 
-        if (propertyToSection.size === 0) return;
+        // Compute which headers would be injected in DOM order.
+        const expectedHeaders: Array<{ id: number; header: string }> = [];
+        let lastId: number | null = null;
+        for (const el of propertyEls) {
+            const sec = propertyToSection.get(el.getAttribute("data-property-key")!) ?? null;
+            if (sec && sec.id !== lastId) expectedHeaders.push({ id: sec.id, header: sec.header });
+            lastId = sec ? sec.id : null;
+        }
+
+        // Skip clear+reinject if the DOM already has the right headers in order.
+        // This prevents a visible flash when frontmatter changes don't affect sections.
+        const existingHeaders = [...propertiesEl.querySelectorAll<HTMLElement>("[data-sp-section]")];
+        const alreadyCurrent =
+            expectedHeaders.length === existingHeaders.length &&
+            expectedHeaders.every((h, i) =>
+                existingHeaders[i].textContent === h.header &&
+                existingHeaders[i].classList.contains(`sp-sec-${h.id}`)
+            );
+        if (alreadyCurrent) return;
+
+        this.clearSectionHeaders(contentEl);
+        if (expectedHeaders.length === 0) return;
 
         // Walk properties in DOM order: inject a header at each section start and
         // mark every member property with its section class so CSS can hide orphaned
         // headers when hide-empty is active.
-        let lastSectionId: number | null = null;
-
-        for (const el of propertyEls) {
-            const key = el.getAttribute("data-property-key")!;
-            const sec = propertyToSection.get(key) ?? null;
-
+        lastId = null;
+        for (const el of propertiesEl.querySelectorAll<HTMLElement>(
+            ".metadata-property[data-property-key]"
+        )) {
+            const sec = propertyToSection.get(el.getAttribute("data-property-key")!) ?? null;
             if (sec) {
                 el.classList.add(`sp-sec-${sec.id}-prop`);
-                if (sec.id !== lastSectionId) {
+                if (sec.id !== lastId) {
                     propertiesEl.insertBefore(this.createSectionHeaderEl(sec.header, sec.id), el);
                 }
             }
-            lastSectionId = sec ? sec.id : null;
+            lastId = sec ? sec.id : null;
         }
     }
 
@@ -568,6 +640,105 @@ export default class StrangePropertiesPlugin extends Plugin {
         wrapper.remove();
     }
 
+    // ─── Enum dropdowns ──────────────────────────────────────────────────────
+
+    private injectEnumDropdowns(
+        contentEl: HTMLElement,
+        frontmatter: Record<string, unknown>,
+        file: TFile
+    ) {
+        if (this.enumCache.size === 0) return;
+
+        for (const propEl of contentEl.querySelectorAll<HTMLElement>(
+            '.metadata-property[data-property-key]'
+        )) {
+            const key = propEl.dataset.propertyKey!;
+            const entries = this.enumCache.get(key);
+            if (!entries) continue;
+            if (propEl.hasAttribute('data-sp-enum')) continue;
+
+            const assoc = this.settings.enumAssociations.find(a => a.property === key)!;
+            this.injectEnumDropdown(propEl, key, entries, assoc.storeAs, frontmatter[key], file);
+        }
+    }
+
+    private injectEnumDropdown(
+        propEl: HTMLElement,
+        key: string,
+        entries: ResolvedEnumEntry[],
+        storeAs: 'text' | 'number',
+        currentRaw: unknown,
+        file: TFile
+    ) {
+        const valueEl = propEl.querySelector<HTMLElement>('.metadata-property-value');
+        if (!valueEl) return;
+
+        const nativeInput = valueEl.querySelector<HTMLElement>('[contenteditable]') ??
+                            valueEl.querySelector<HTMLElement>('input');
+        if (!nativeInput) return;
+
+        // Walk up to find the direct child of valueEl to hide (e.g. .metadata-input-longtext)
+        let hideTarget: HTMLElement = nativeInput;
+        while (hideTarget.parentElement !== valueEl) {
+            if (!hideTarget.parentElement) return;
+            hideTarget = hideTarget.parentElement;
+        }
+
+        const currentValue = currentRaw != null ? String(currentRaw) : '';
+        const matchedEntry = entries.find(e => String(e.storedValue) === currentValue);
+
+        const select = document.createElement('select');
+        select.className = 'sp-enum-select';
+
+        if (!currentValue) {
+            const blank = document.createElement('option');
+            blank.value = '';
+            blank.textContent = '— Select —';
+            blank.disabled = true;
+            blank.selected = true;
+            select.appendChild(blank);
+        }
+
+        if (currentValue && !matchedEntry) {
+            const stale = document.createElement('option');
+            stale.value = currentValue;
+            stale.textContent = currentValue;
+            stale.selected = true;
+            stale.className = 'sp-enum-stale';
+            select.appendChild(stale);
+        }
+
+        for (const entry of entries) {
+            const opt = document.createElement('option');
+            opt.value = String(entry.storedValue);
+            opt.textContent = entry.displayLabel;
+            if (matchedEntry && String(entry.storedValue) === currentValue) opt.selected = true;
+            select.appendChild(opt);
+        }
+
+        select.addEventListener('change', async () => {
+            if (!select.value) return;
+            const val = storeAs === 'number' ? Number(select.value) : select.value;
+            await this.app.fileManager.processFrontMatter(file, fm => { fm[key] = val; });
+        });
+
+        hideTarget.setAttribute('data-sp-enum-hidden', '');
+        hideTarget.style.display = 'none';
+        valueEl.insertBefore(select, hideTarget);
+        propEl.setAttribute('data-sp-enum', '');
+    }
+
+    private clearEnumDropdowns(contentEl: HTMLElement) {
+        for (const el of contentEl.querySelectorAll<HTMLElement>('[data-sp-enum-hidden]')) {
+            el.style.removeProperty('display');
+            el.removeAttribute('data-sp-enum-hidden');
+        }
+        contentEl.querySelectorAll('.sp-enum-select').forEach(el => el.remove());
+        contentEl.querySelectorAll<HTMLElement>('[data-sp-enum]').forEach(el => {
+            el.removeAttribute('data-sp-enum');
+        });
+    }
+
     // ─── Cleanup ──────────────────────────────────────────────────────────────
 
     private clearLeaf(leaf: WorkspaceLeaf) {
@@ -576,6 +747,7 @@ export default class StrangePropertiesPlugin extends Plugin {
         this.clearClasses(contentEl);
         this.clearPropertyValues(contentEl);
         this.clearSectionHeaders(contentEl);
+        this.clearEnumDropdowns(contentEl);
         this.clearEmptyMarks(contentEl);
         this.clearHideEmptyButton(contentEl);
         const containerEl =

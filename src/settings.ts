@@ -23,12 +23,33 @@ export interface SectionHeaderRule {
     sections: PropertySection[];
 }
 
+export interface StaticEnumEntry {
+    enum_text?: string;
+    enum_number?: number;
+    enum_label?: string;
+}
+
+export interface StaticEnum {
+    id: string;
+    name: string;
+    allowOther: boolean;
+    entries: StaticEnumEntry[];
+}
+
+export interface EnumAssociation {
+    property: string;
+    enumId: string;
+    storeAs: "text" | "number";
+}
+
 export interface StrangePropertiesSettings {
     hideEmptyEnabled: boolean;
     hideEmptyActive: boolean;
     injectPropertyValues: boolean;
     propertyClasses: PropertyClassRule[];
     sectionHeaders: SectionHeaderRule[];
+    staticEnums: StaticEnum[];
+    enumAssociations: EnumAssociation[];
 }
 
 export const DEFAULT_SETTINGS: StrangePropertiesSettings = {
@@ -39,6 +60,8 @@ export const DEFAULT_SETTINGS: StrangePropertiesSettings = {
         { enabled: true, property: "tags", template: "tag-{value}", scope: "notes" },
     ],
     sectionHeaders: [],
+    staticEnums: [],
+    enumAssociations: [],
 };
 
 // ─── Property name autocomplete ───────────────────────────────────────────────
