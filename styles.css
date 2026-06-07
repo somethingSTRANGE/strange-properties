@@ -176,9 +176,41 @@
 
       svg {
         visibility: hidden;
-        outline: 1px dashed orange;
       }
     }
   }
+}
+
+/*
+ * Enum dropdown styles
+ */
+
+/* Chevron indicator — the right 28px is the dropdown trigger zone */
+.metadata-property[data-sp-enum] .metadata-property-value {
+  position: relative;
+}
+
+.metadata-property[data-sp-enum] .metadata-property-value::after {
+  content: '⌄';
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--text-muted);
+  font-size: 1.1em;
+  line-height: 1;
+}
+
+/* Pad native inputs so content doesn't overlap the chevron */
+.metadata-property[data-sp-enum] .metadata-input-longtext,
+.metadata-property[data-sp-enum] .metadata-property-value input:not(.metadata-property-key-input) {
+  padding-right: 28px;
+}
+
+/* Stale value: stored value doesn't match any enum entry */
+.metadata-property[data-sp-enum-stale] .metadata-property-value .metadata-input-longtext,
+.metadata-property[data-sp-enum-stale] .metadata-property-value input:not(.metadata-property-key-input) {
+  color: var(--text-error);
 }
 

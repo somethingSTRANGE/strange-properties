@@ -22,6 +22,9 @@ export default class StrangePropertiesPlugin extends Plugin {
     fundingUrl: string | Record<string, string> | undefined;
     private enumCache = new Map<string, ResolvedEnumEntry[]>();
     private observers = new Map<WorkspaceLeaf, MutationObserver>();
+    private enumClickHandlers = new Map<HTMLElement, (e: MouseEvent) => void>();
+    private enumSelect: HTMLSelectElement | null = null;
+    private enumPickerCleanup: (() => void) | null = null;
     private sectionStyleEl: HTMLStyleElement | null = null;
 
     async onload() {
@@ -36,6 +39,13 @@ export default class StrangePropertiesPlugin extends Plugin {
             this.updateAllLeaves();
             this.setupObservers();
         });
+
+        // Shared invisible select used to open OS-native pickers for enum properties.
+        const sel = document.createElement('select');
+        sel.setAttribute('tabindex', '-1');
+        sel.style.cssText = 'position:fixed;opacity:0;pointer-events:none;top:0;left:0;width:0;height:0;';
+        document.body.appendChild(sel);
+        this.enumSelect = sel;
 
         this.registerEvent(
             this.app.workspace.on("active-leaf-change", () => {
@@ -64,6 +74,9 @@ export default class StrangePropertiesPlugin extends Plugin {
     }
 
     onunload() {
+        this.enumPickerCleanup?.();
+        this.enumSelect?.remove();
+        this.enumSelect = null;
         this.teardownObservers();
         this.app.workspace.iterateAllLeaves((leaf) => this.clearLeaf(leaf));
         this.sectionStyleEl?.remove();
@@ -164,15 +177,14 @@ export default class StrangePropertiesPlugin extends Plugin {
     private applyLeafUpdates(
         contentEl: HTMLElement,
         frontmatter: Record<string, unknown>,
-        leafType: "notes" | "properties",
-        file: TFile
+        leafType: "notes" | "properties"
     ) {
         if (this.settings.injectPropertyValues) {
             this.injectPropertyValues(contentEl, frontmatter);
         }
         this.applyClasses(contentEl, this.resolveClasses(frontmatter, leafType));
         this.injectSectionHeaders(contentEl, frontmatter);
-        this.injectEnumDropdowns(contentEl, frontmatter, file);
+        this.injectEnumDropdowns(contentEl, frontmatter);
         this.markEmptyProperties(contentEl, frontmatter);
         this.updateHideEmptyContainer(contentEl);
         this.injectHideEmptyButton(contentEl);
@@ -182,22 +194,27 @@ export default class StrangePropertiesPlugin extends Plugin {
         const leafType = this.getLeafType(leaf);
         if (!leafType) return;
 
-        const file = this.getFileForLeaf(leaf);
         const contentEl = this.getContentEl(leaf);
         if (!contentEl) return;
 
-        if (!file) {
+        // Synchronous clear when there is no file to show.
+        if (!this.getFileForLeaf(leaf)) {
             this.clearLeaf(leaf);
             return;
         }
 
-        const frontmatter =
-            this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
-
-        // Defer one animation frame so Obsidian can finish rendering property
-        // elements before we query and modify them.
+        // Read file and frontmatter inside the RAF so we always get the freshest
+        // metadataCache state at execution time, not at queue time. Obsidian may
+        // re-render the property panel before updating the cache (triggering our
+        // observer), so the cache can still be stale when updateLeaf is called.
         activeWindow.requestAnimationFrame(() => {
-            this.applyLeafUpdates(contentEl, frontmatter, leafType, file);
+            const file = this.getFileForLeaf(leaf);
+            if (!file) {
+                this.clearLeaf(leaf);
+                return;
+            }
+            const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+            this.applyLeafUpdates(contentEl, frontmatter, leafType);
         });
     }
 
@@ -248,15 +265,6 @@ export default class StrangePropertiesPlugin extends Plugin {
                     );
                     if (wrapperWasAdded) return true;
 
-                    const enumSelectWasAdded = mutations.some((m) =>
-                        [...m.addedNodes].some(
-                            (n) =>
-                                n instanceof HTMLElement &&
-                                n.classList.contains("sp-enum-select")
-                        )
-                    );
-                    if (enumSelectWasAdded) return true;
-
                     // Section headers: treat as own only when we ADDED headers in this
                     // batch. A batch of pure removals means Obsidian cleaned up our
                     // elements — we must re-inject. Same reasoning as wrapperWasAdded:
@@ -299,7 +307,7 @@ export default class StrangePropertiesPlugin extends Plugin {
                 if (file && observerContentEl && leafType) {
                     const frontmatter =
                         this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
-                    this.applyLeafUpdates(observerContentEl, frontmatter, leafType, file);
+                    this.applyLeafUpdates(observerContentEl, frontmatter, leafType);
                 }
             });
             observer.observe(contentEl, { childList: true, subtree: true });
@@ -642,101 +650,157 @@ export default class StrangePropertiesPlugin extends Plugin {
 
     // ─── Enum dropdowns ──────────────────────────────────────────────────────
 
-    private injectEnumDropdowns(
-        contentEl: HTMLElement,
-        frontmatter: Record<string, unknown>,
-        file: TFile
-    ) {
+    // ─── Enum dropdowns ──────────────────────────────────────────────────────
+
+    private injectEnumDropdowns(contentEl: HTMLElement, frontmatter: Record<string, unknown>) {
         if (this.enumCache.size === 0) return;
+
+        // One delegated mousedown listener per contentEl, registered once.
+        if (!this.enumClickHandlers.has(contentEl)) {
+            const handler = (e: MouseEvent) => {
+                const target = e.target as Element;
+                if (!target.closest('.metadata-property-value')) return;
+                const propEl = target.closest<HTMLElement>(
+                    '.metadata-property[data-sp-enum][data-property-key]'
+                );
+                if (!propEl) return;
+
+                // Only intercept clicks in the right chevron zone — left zone edits natively.
+                const valueEl = propEl.querySelector<HTMLElement>('.metadata-property-value');
+                if (!valueEl) return;
+                const rect = valueEl.getBoundingClientRect();
+                if (e.clientX < rect.right - 28) return;
+
+                const leaf = [...this.observers.keys()].find(
+                    l => this.getContentEl(l) === contentEl
+                ) ?? null;
+                if (!leaf) return;
+                const file = this.getFileForLeaf(leaf);
+                if (!file) return;
+
+                const key = propEl.dataset.propertyKey!;
+                const entries = this.enumCache.get(key);
+                const assoc = this.settings.enumAssociations.find(a => a.property === key);
+                if (!entries || !assoc) return;
+
+                // Blur active element to dismiss any autocomplete popup before opening picker.
+                (document.activeElement as HTMLElement)?.blur();
+                e.preventDefault();
+                e.stopPropagation();
+                this.openEnumPicker(valueEl, key, entries, assoc.storeAs, file);
+            };
+            contentEl.addEventListener('mousedown', handler, true);
+            this.enumClickHandlers.set(contentEl, handler);
+        }
 
         for (const propEl of contentEl.querySelectorAll<HTMLElement>(
             '.metadata-property[data-property-key]'
         )) {
             const key = propEl.dataset.propertyKey!;
-            const entries = this.enumCache.get(key);
-            if (!entries) continue;
-            if (propEl.hasAttribute('data-sp-enum')) continue;
+            if (!this.enumCache.has(key)) continue;
 
-            const assoc = this.settings.enumAssociations.find(a => a.property === key)!;
-            this.injectEnumDropdown(propEl, key, entries, assoc.storeAs, frontmatter[key], file);
+            const currentRaw = frontmatter[key];
+            const currentValue = currentRaw != null ? String(currentRaw) : '';
+            const entries = this.enumCache.get(key)!;
+            const matched = entries.find(e => String(e.storedValue) === currentValue);
+
+            propEl.setAttribute('data-sp-enum', '');
+            if (!matched && currentValue) {
+                propEl.setAttribute('data-sp-enum-stale', '');
+            } else {
+                propEl.removeAttribute('data-sp-enum-stale');
+            }
         }
     }
 
-    private injectEnumDropdown(
-        propEl: HTMLElement,
+    private openEnumPicker(
+        triggerEl: HTMLElement,
         key: string,
         entries: ResolvedEnumEntry[],
         storeAs: 'text' | 'number',
-        currentRaw: unknown,
         file: TFile
     ) {
-        const valueEl = propEl.querySelector<HTMLElement>('.metadata-property-value');
-        if (!valueEl) return;
+        const sel = this.enumSelect;
+        if (!sel) return;
 
-        const nativeInput = valueEl.querySelector<HTMLElement>('[contenteditable]') ??
-                            valueEl.querySelector<HTMLElement>('input');
-        if (!nativeInput) return;
+        // blur may not fire reliably on a showPicker()-driven select with tabindex="-1",
+        // so handlers can accumulate. Always discard the previous session explicitly.
+        this.enumPickerCleanup?.();
 
-        // Walk up to find the direct child of valueEl to hide (e.g. .metadata-input-longtext)
-        let hideTarget: HTMLElement = nativeInput;
-        while (hideTarget.parentElement !== valueEl) {
-            if (!hideTarget.parentElement) return;
-            hideTarget = hideTarget.parentElement;
-        }
-
+        const rect = triggerEl.getBoundingClientRect();
+        const currentRaw = this.app.metadataCache.getFileCache(file)?.frontmatter?.[key];
         const currentValue = currentRaw != null ? String(currentRaw) : '';
-        const matchedEntry = entries.find(e => String(e.storedValue) === currentValue);
 
-        const select = document.createElement('select');
-        select.className = 'sp-enum-select';
-
-        if (!currentValue) {
-            const blank = document.createElement('option');
-            blank.value = '';
-            blank.textContent = '— Select —';
-            blank.disabled = true;
-            blank.selected = true;
-            select.appendChild(blank);
-        }
-
-        if (currentValue && !matchedEntry) {
-            const stale = document.createElement('option');
-            stale.value = currentValue;
-            stale.textContent = currentValue;
-            stale.selected = true;
-            stale.className = 'sp-enum-stale';
-            select.appendChild(stale);
-        }
-
+        // Populate and position the shared select over the trigger element.
+        sel.innerHTML = '';
         for (const entry of entries) {
             const opt = document.createElement('option');
             opt.value = String(entry.storedValue);
             opt.textContent = entry.displayLabel;
-            if (matchedEntry && String(entry.storedValue) === currentValue) opt.selected = true;
-            select.appendChild(opt);
+            sel.appendChild(opt);
         }
+        sel.value = currentValue;
+        sel.style.cssText =
+            `position:fixed;opacity:0;pointer-events:none;` +
+            `top:${rect.top}px;left:${rect.left}px;` +
+            `width:${rect.width}px;height:${rect.height}px;`;
 
-        select.addEventListener('change', async () => {
-            if (!select.value) return;
-            const val = storeAs === 'number' ? Number(select.value) : select.value;
+        const cleanup = () => {
+            sel.removeEventListener('change', onChange);
+            sel.removeEventListener('blur', onBlur);
+            this.enumPickerCleanup = null;
+        };
+        const onChange = async () => {
+            cleanup();
+            const val = storeAs === 'number' ? Number(sel.value) : sel.value;
+
+            // Fast-path update: push the new value into the native input on every leaf
+            // showing this file, then dispatch a synthetic blur. Obsidian's blur handler
+            // reads textContent and calls onChange, which updates in-memory state and
+            // re-renders all panels at native speed — no file round-trip required.
+            // processFrontMatter below guarantees persistence regardless.
+            const escapedKey = CSS.escape(key);
+            for (const leaf of this.observers.keys()) {
+                if (this.getFileForLeaf(leaf)?.path !== file.path) continue;
+                const leafContentEl = this.getContentEl(leaf);
+                if (!leafContentEl) continue;
+                const leafPropEl = leafContentEl.querySelector<HTMLElement>(
+                    `.metadata-property[data-property-key="${escapedKey}"]`
+                );
+                const nativeInput =
+                    leafPropEl?.querySelector<HTMLElement>('.metadata-input-longtext[contenteditable="true"]')
+                    ?? leafPropEl?.querySelector<HTMLElement>('input:not(.metadata-property-key-input)');
+                if (!nativeInput) continue;
+                if (nativeInput.isContentEditable) {
+                    nativeInput.textContent = String(val);
+                    nativeInput.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+                } else {
+                    (nativeInput as HTMLInputElement).value = String(val);
+                    nativeInput.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            }
+
             await this.app.fileManager.processFrontMatter(file, fm => { fm[key] = val; });
-        });
+        };
+        const onBlur = () => cleanup();
 
-        hideTarget.setAttribute('data-sp-enum-hidden', '');
-        hideTarget.style.display = 'none';
-        valueEl.insertBefore(select, hideTarget);
-        propEl.setAttribute('data-sp-enum', '');
+        sel.addEventListener('change', onChange);
+        sel.addEventListener('blur', onBlur);
+        this.enumPickerCleanup = cleanup;
+
+        (sel as any).showPicker();
     }
 
     private clearEnumDropdowns(contentEl: HTMLElement) {
-        for (const el of contentEl.querySelectorAll<HTMLElement>('[data-sp-enum-hidden]')) {
-            el.style.removeProperty('display');
-            el.removeAttribute('data-sp-enum-hidden');
+        const handler = this.enumClickHandlers.get(contentEl);
+        if (handler) {
+            contentEl.removeEventListener('mousedown', handler, true);
+            this.enumClickHandlers.delete(contentEl);
         }
-        contentEl.querySelectorAll('.sp-enum-select').forEach(el => el.remove());
-        contentEl.querySelectorAll<HTMLElement>('[data-sp-enum]').forEach(el => {
+        for (const el of contentEl.querySelectorAll<HTMLElement>('[data-sp-enum]')) {
             el.removeAttribute('data-sp-enum');
-        });
+            el.removeAttribute('data-sp-enum-stale');
+        }
     }
 
     // ─── Cleanup ──────────────────────────────────────────────────────────────
