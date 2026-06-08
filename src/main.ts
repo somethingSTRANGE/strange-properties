@@ -23,9 +23,25 @@ export default class StrangePropertiesPlugin extends Plugin {
     private enumCache = new Map<string, ResolvedEnumEntry[]>();
     private observers = new Map<WorkspaceLeaf, MutationObserver>();
     private enumClickHandlers = new Map<HTMLElement, (e: MouseEvent) => void>();
+    private checkboxChangeHandlers = new Map<HTMLElement, (e: Event) => void>();
+    // Keyed by contentEl → property key → { value, time }. After a checkbox click,
+    // Obsidian calls synchronize() which rebuilds the element from the stale metadataCache.
+    // This map lets injectPropertyValues use the user's actual click value (not the stale
+    // DOM) for a grace period (~1500ms) until the cache catches up.
+    private recentCheckboxValues = new Map<HTMLElement, Map<string, { value: boolean; time: number }>>();
     private enumSelect: HTMLSelectElement | null = null;
     private enumPickerCleanup: (() => void) | null = null;
     private sectionStyleEl: HTMLStyleElement | null = null;
+
+    // Timestamp logging for diagnosing the 16 input/data-attr transitions across both views.
+    // Set DEBUG = true temporarily; leave false in production.
+    // Set DEBUG_CHECKBOX_ONLY = true to suppress non-checkbox IPV lines (reduces noise).
+    private static readonly DEBUG = false;
+    private static readonly DEBUG_CHECKBOX_ONLY = true;
+    private dbg(msg: string, ...args: unknown[]) {
+        if (StrangePropertiesPlugin.DEBUG)
+            console.log(`[SP ${(Date.now() % 100_000).toString().padStart(5, '0')}ms]`, msg, ...args);
+    }
 
     async onload() {
         console.log(`Strange Properties loaded — build ${__BUILD_TIME__}`);
@@ -62,6 +78,7 @@ export default class StrangePropertiesPlugin extends Plugin {
 
         this.registerEvent(
             this.app.metadataCache.on("changed", (file) => {
+                this.dbg("metadataCache.changed", file.path);
                 this.updateLeavesForFile(file);
             })
         );
@@ -180,7 +197,8 @@ export default class StrangePropertiesPlugin extends Plugin {
         leafType: "notes" | "properties"
     ) {
         if (this.settings.injectPropertyValues) {
-            this.injectPropertyValues(contentEl, frontmatter);
+            this.injectPropertyValues(contentEl, frontmatter, leafType);
+            this.setupCheckboxHandler(contentEl);
         }
         this.applyClasses(contentEl, this.resolveClasses(frontmatter, leafType));
         this.injectSectionHeaders(contentEl, frontmatter);
@@ -305,6 +323,7 @@ export default class StrangePropertiesPlugin extends Plugin {
                 const observerContentEl = this.getContentEl(leaf);
                 const leafType = this.getLeafType(leaf);
                 if (file && observerContentEl && leafType) {
+                    this.dbg("observer fired", leafType, file.path);
                     const frontmatter =
                         this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
                     this.applyLeafUpdates(observerContentEl, frontmatter, leafType);
@@ -383,22 +402,93 @@ export default class StrangePropertiesPlugin extends Plugin {
 
     // ─── data-property-value injection ───────────────────────────────────────
 
+    private static readonly CHECKBOX_GRACE_MS = 2000;
+
     private injectPropertyValues(
         contentEl: HTMLElement,
-        frontmatter: Record<string, unknown>
+        frontmatter: Record<string, unknown>,
+        leafType: "notes" | "properties"
     ) {
         const els = contentEl.querySelectorAll<HTMLElement>(
             ".metadata-property[data-property-key]"
         );
+        const recentForEl = this.recentCheckboxValues.get(contentEl);
         for (const el of els) {
             const key = el.getAttribute("data-property-key")!;
-            const normalized = this.normalizePropertyValue(frontmatter[key]);
+
+            // After a checkbox click, Obsidian calls synchronize() which rebuilds the
+            // element from the stale metadataCache. Use the value from our change handler
+            // (stored in recentCheckboxValues) for a grace period so the observer doesn't
+            // overwrite with the stale DOM value before the cache catches up.
+            const recentCb = recentForEl?.get(key);
+            let normalized: string | null;
+            if (recentCb && Date.now() - recentCb.time < StrangePropertiesPlugin.CHECKBOX_GRACE_MS) {
+                normalized = this.normalizePropertyValue(recentCb.value);
+            } else {
+                // Prefer DOM read: Obsidian synchronizes the panel DOM before updating
+                // the metadataCache, so the DOM has the committed value sooner. Fall
+                // back to cache for complex types (tags, multitext) where DOM structure
+                // doesn't map cleanly to a single value.
+                normalized =
+                    this.readDOMPropertyValue(el) ??
+                    this.normalizePropertyValue(frontmatter[key]);
+            }
+
+            if (StrangePropertiesPlugin.DEBUG) {
+                const isCheckbox = !!el.querySelector('input[type="checkbox"]');
+                if (!StrangePropertiesPlugin.DEBUG_CHECKBOX_ONLY || isCheckbox)
+                    this.dbg(`IPV [${leafType}]: set`, key, "→", normalized);
+            }
+
             if (normalized !== null) {
                 el.setAttribute("data-property-value", normalized);
             } else {
                 el.removeAttribute("data-property-value");
             }
         }
+    }
+
+    private readDOMPropertyValue(propEl: HTMLElement): string | null | undefined {
+        // Returns undefined  → caller should fall back to metadataCache
+        // Returns null       → value is empty; remove the attribute
+        // Returns string     → use this normalized value
+
+        // Contenteditable (text, number-as-text, internal link, etc.)
+        const ce = propEl.querySelector<HTMLElement>(
+            '.metadata-input-longtext[contenteditable="true"]'
+        );
+        if (ce) {
+            if (ce === document.activeElement || ce.contains(document.activeElement))
+                return undefined; // mid-edit — don't read draft
+            return this.normalizePropertyValue(ce.textContent?.trim() || null);
+        }
+
+        // Single native input (number, date, datetime, checkbox, etc.)
+        const input = propEl.querySelector<HTMLInputElement>(
+            'input:not(.metadata-property-key-input)'
+        );
+        if (input) {
+            if (input === document.activeElement) return undefined; // mid-edit
+            if (input.type === 'checkbox') {
+                // Obsidian replaces the checkbox <input> element on toggle, which fires
+                // a childList mutation and lets us read the new checked state promptly.
+                // Cross-panel propagation (e.g. FileProps → Note) is still gated on the
+                // metadataCache round-trip (~1-2s) — that latency is Obsidian's own.
+                return this.normalizePropertyValue(input.checked);
+            }
+            // number inputs: Obsidian does not replace the <input type="number"> element
+            // on value changes — it updates the value property in place, which does NOT
+            // fire a childList mutation. So non-enum number edits wait for the metadataCache
+            // round-trip (~1-2s). Enum selections are handled with a direct attribute write
+            // in the onChange handler, bypassing this path.
+            return this.normalizePropertyValue(input.value || null);
+        }
+
+        // tags, multitext, aliases: pill-based structure has no single value node to read.
+        // data-property-value for these types always updates on the metadataCache round-trip
+        // (~1-2s). Known limitation — improving this would require parsing the pill DOM or
+        // hooking Obsidian's internal list-editing events.
+        return undefined;
     }
 
     private clearPropertyValues(contentEl: HTMLElement) {
@@ -755,6 +845,7 @@ export default class StrangePropertiesPlugin extends Plugin {
             const val = storeAs === 'number' ? Number(sel.value) : sel.value;
             const strVal = String(val);
             const escapedKey = CSS.escape(key);
+            this.dbg("enum onChange", key, "→", strVal, `(storeAs:${storeAs})`);
 
             // Update only MarkdownView (notes) leaves: set textContent so Obsidian's
             // blur handler reads the new value, then fire synthetic blur. Obsidian's
@@ -774,18 +865,49 @@ export default class StrangePropertiesPlugin extends Plugin {
                 const nativeInput =
                     leafPropEl?.querySelector<HTMLElement>('.metadata-input-longtext[contenteditable="true"]')
                     ?? leafPropEl?.querySelector<HTMLElement>('input:not(.metadata-property-key-input)');
-                if (!nativeInput) continue;
+                if (!nativeInput) {
+                    this.dbg("enum onChange: notes input NOT FOUND for", key, "— visual update skipped");
+                    continue;
+                }
                 if (nativeInput.isContentEditable) {
+                    this.dbg("enum onChange: notes input contenteditable, setting textContent");
                     nativeInput.textContent = strVal;
                     nativeInput.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
                 } else {
+                    this.dbg("enum onChange: notes input type=" + (nativeInput as HTMLInputElement).type + ", setting value");
                     (nativeInput as HTMLInputElement).value = strVal;
                     nativeInput.dispatchEvent(new Event('change', { bubbles: true }));
                 }
                 break; // first notes leaf is sufficient; cross-panel sync handles the rest
             }
 
+            // Immediately stamp data-property-value on every leaf for this file.
+            // Text enum: the contenteditable textContent= above fires a childList mutation
+            // so the observer will update the attribute anyway — this is a harmless second
+            // write. Number enum: input.value= does NOT fire a childList mutation, so the
+            // observer never sees the change until the metadataCache round-trip (~1-2s);
+            // this write is the only fast path for number-typed properties.
+            // File Properties leaves are covered here too, since we never touch their input.
+            const normalizedVal = this.normalizePropertyValue(val);
+            for (const leaf of this.observers.keys()) {
+                if (this.getFileForLeaf(leaf)?.path !== file.path) continue;
+                const leafContentEl = this.getContentEl(leaf);
+                if (!leafContentEl) continue;
+                const leafPropEl = leafContentEl.querySelector<HTMLElement>(
+                    `.metadata-property[data-property-key="${escapedKey}"]`
+                );
+                if (!leafPropEl) continue;
+                this.dbg("enum onChange: direct data-property-value write", this.getLeafType(leaf), key, "→", normalizedVal);
+                if (normalizedVal !== null) {
+                    leafPropEl.setAttribute('data-property-value', normalizedVal);
+                } else {
+                    leafPropEl.removeAttribute('data-property-value');
+                }
+            }
+
+            this.dbg("enum onChange: calling processFrontMatter", key, "→", val);
             await this.app.fileManager.processFrontMatter(file, fm => { fm[key] = val; });
+            this.dbg("enum onChange: processFrontMatter complete", key);
         };
         const onBlur = () => cleanup();
 
@@ -808,6 +930,63 @@ export default class StrangePropertiesPlugin extends Plugin {
         }
     }
 
+    // ─── Checkbox data-property-value handler ────────────────────────────────
+
+    // Checkbox clicks toggle input.checked in place — no element replacement, so
+    // no childList mutation and the observer never fires. A delegated change listener
+    // gives us the new checked state synchronously, before the file write.
+    //
+    // The value is stored in recentCheckboxValues keyed by contentEl + property key.
+    // injectPropertyValues reads from this store (not the DOM) for ~1500ms after a click,
+    // because Obsidian's synchronize() rebuilds the element from the stale metadataCache
+    // within that window, which would otherwise overwrite our correct value with stale data.
+    private setupCheckboxHandler(contentEl: HTMLElement) {
+        if (this.checkboxChangeHandlers.has(contentEl)) return;
+        const handler = (e: Event) => {
+            if (!this.settings.injectPropertyValues) return;
+            const target = e.target as HTMLElement;
+            if (!(target instanceof HTMLInputElement) || target.type !== 'checkbox') return;
+            const propEl = target.closest<HTMLElement>('.metadata-property[data-property-key]');
+            if (!propEl) return;
+            const key = propEl.dataset.propertyKey!;
+            const value = target.checked;
+            // Store the authoritative click value for ALL leaves showing the same file,
+            // not just the one that was clicked. The active-leaf-change RAF fires ~1 frame
+            // after any click and calls injectPropertyValues on all leaves. Without this,
+            // the sister leaf reads a stale DOM value during that first RAF pass.
+            const clickedLeaf = [...this.observers.keys()]
+                .find(l => this.getContentEl(l) === contentEl) ?? null;
+            const clickedFile = clickedLeaf ? this.getFileForLeaf(clickedLeaf) : null;
+            const now = Date.now();
+            for (const leaf of this.observers.keys()) {
+                if (clickedFile && this.getFileForLeaf(leaf)?.path !== clickedFile.path) continue;
+                const leafEl = this.getContentEl(leaf);
+                if (!leafEl) continue;
+                let m = this.recentCheckboxValues.get(leafEl);
+                if (!m) { m = new Map(); this.recentCheckboxValues.set(leafEl, m); }
+                m.set(key, { value, time: now });
+            }
+            const normalized = this.normalizePropertyValue(value);
+            this.dbg("checkbox handler", key, "→", normalized);
+            if (normalized !== null) {
+                propEl.setAttribute('data-property-value', normalized);
+            } else {
+                propEl.removeAttribute('data-property-value');
+            }
+        };
+        contentEl.addEventListener('change', handler, true);
+        this.checkboxChangeHandlers.set(contentEl, handler);
+    }
+
+    private clearCheckboxHandler(contentEl: HTMLElement) {
+        const handler = this.checkboxChangeHandlers.get(contentEl);
+        if (handler) {
+            contentEl.removeEventListener('change', handler, true);
+            this.checkboxChangeHandlers.delete(contentEl);
+        }
+        this.recentCheckboxValues.delete(contentEl);
+    }
+
     // ─── Cleanup ──────────────────────────────────────────────────────────────
 
     private clearLeaf(leaf: WorkspaceLeaf) {
@@ -817,6 +996,7 @@ export default class StrangePropertiesPlugin extends Plugin {
         this.clearPropertyValues(contentEl);
         this.clearSectionHeaders(contentEl);
         this.clearEnumDropdowns(contentEl);
+        this.clearCheckboxHandler(contentEl);
         this.clearEmptyMarks(contentEl);
         this.clearHideEmptyButton(contentEl);
         const containerEl =
