@@ -753,15 +753,19 @@ export default class StrangePropertiesPlugin extends Plugin {
         const onChange = async () => {
             cleanup();
             const val = storeAs === 'number' ? Number(sel.value) : sel.value;
-
-            // Fast-path update: push the new value into the native input on every leaf
-            // showing this file, then dispatch a synthetic blur. Obsidian's blur handler
-            // reads textContent and calls onChange, which updates in-memory state and
-            // re-renders all panels at native speed — no file round-trip required.
-            // processFrontMatter below guarantees persistence regardless.
+            const strVal = String(val);
             const escapedKey = CSS.escape(key);
+
+            // Update only MarkdownView (notes) leaves: set textContent so Obsidian's
+            // blur handler reads the new value, then fire synthetic blur. Obsidian's
+            // blur → ctx.onChange updates Note's in-memory model and propagates to
+            // File Properties via Obsidian's native cross-panel sync — fast, no file
+            // round-trip. We deliberately do not touch File Properties' native input:
+            // setting textContent there triggers Obsidian to re-synchronise it from
+            // the stale metadataCache, causing a visible value flicker.
             for (const leaf of this.observers.keys()) {
                 if (this.getFileForLeaf(leaf)?.path !== file.path) continue;
+                if (this.getLeafType(leaf) !== 'notes') continue;
                 const leafContentEl = this.getContentEl(leaf);
                 if (!leafContentEl) continue;
                 const leafPropEl = leafContentEl.querySelector<HTMLElement>(
@@ -772,12 +776,13 @@ export default class StrangePropertiesPlugin extends Plugin {
                     ?? leafPropEl?.querySelector<HTMLElement>('input:not(.metadata-property-key-input)');
                 if (!nativeInput) continue;
                 if (nativeInput.isContentEditable) {
-                    nativeInput.textContent = String(val);
+                    nativeInput.textContent = strVal;
                     nativeInput.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
                 } else {
-                    (nativeInput as HTMLInputElement).value = String(val);
+                    (nativeInput as HTMLInputElement).value = strVal;
                     nativeInput.dispatchEvent(new Event('change', { bubbles: true }));
                 }
+                break; // first notes leaf is sufficient; cross-panel sync handles the rest
             }
 
             await this.app.fileManager.processFrontMatter(file, fm => { fm[key] = val; });
