@@ -2,7 +2,9 @@ import { MarkdownView, normalizePath, Plugin, setIcon, setTooltip, TFile, Worksp
 import {
     DEFAULT_SETTINGS,
     PropertyClassRule,
-    SectionHeaderRule,
+    PropertyEntry,
+    PropertyGroup,
+    PropertyRule,
     StrangePropertiesSettings,
     StrangePropertiesSettingTab,
 } from "./settings";
@@ -123,38 +125,60 @@ export default class StrangePropertiesPlugin extends Plugin {
         }
     }
 
+    private findPropertyEntry(property: string): PropertyEntry | undefined {
+        for (const rule of this.settings.propertyRules) {
+            const entry = rule.properties.find(p => p.property === property);
+            if (entry) return entry;
+        }
+        return this.settings.defaultRule.properties.find(p => p.property === property);
+    }
+
     private buildEnumCache() {
         this.enumCache.clear();
-        for (const assoc of this.settings.enumAssociations) {
-            const def = this.settings.staticEnums.find(e => e.id === assoc.enumId);
-            if (!def) continue;
-            const entries: ResolvedEnumEntry[] = [];
-            for (const entry of def.entries) {
-                if (assoc.storeAs === 'text' && entry.enum_text !== undefined) {
-                    entries.push({
-                        storedValue: entry.enum_text,
-                        displayLabel: entry.enum_label ?? entry.enum_text,
-                    });
-                } else if (assoc.storeAs === 'number' && entry.enum_number !== undefined) {
-                    entries.push({
-                        storedValue: entry.enum_number,
-                        displayLabel: entry.enum_label ?? String(entry.enum_number),
-                    });
+        const seen = new Set<string>();
+        const allRules: Array<{ properties: PropertyEntry[] }> = [
+            ...this.settings.propertyRules,
+            this.settings.defaultRule,
+        ];
+        for (const rule of allRules) {
+            for (const entry of rule.properties) {
+                if (seen.has(entry.property) || !entry.enum) continue;
+                seen.add(entry.property);
+                const def = this.settings.staticEnums.find(e => e.id === entry.enum!.id);
+                if (!def) continue;
+                const entries: ResolvedEnumEntry[] = [];
+                for (const e of def.entries) {
+                    if (entry.enum!.storeAs === 'text' && e.enum_text !== undefined) {
+                        entries.push({
+                            storedValue: e.enum_text,
+                            displayLabel: e.enum_label ?? e.enum_text,
+                        });
+                    } else if (entry.enum!.storeAs === 'number' && e.enum_number !== undefined) {
+                        entries.push({
+                            storedValue: e.enum_number,
+                            displayLabel: e.enum_label ?? String(e.enum_number),
+                        });
+                    }
                 }
+                if (entries.length > 0) this.enumCache.set(entry.property, entries);
             }
-            if (entries.length > 0) this.enumCache.set(assoc.property, entries);
         }
     }
 
     private generateSectionStyles(): string {
         const lines: string[] = [];
-        let id = 0;
-        for (const rule of this.settings.sectionHeaders) {
-            for (const _section of rule.sections) {
+        const seen = new Set<string>();
+        const allRules: Array<{ groups: PropertyGroup[] }> = [
+            ...this.settings.propertyRules,
+            this.settings.defaultRule,
+        ];
+        for (const rule of allRules) {
+            for (const group of rule.groups) {
+                if (seen.has(group.id)) continue;
+                seen.add(group.id);
                 lines.push(
-                    `.metadata-container.sp-hide-empty .sp-sec-${id}:not(:has(~ .sp-sec-${id}-prop:not(.sp-empty))) { display: none; }`
+                    `.metadata-container.sp-hide-empty .sp-sec-${group.id}:not(:has(~ .sp-sec-${group.id}-prop:not(.sp-empty))) { display: none; }`
                 );
-                id++;
             }
         }
         return lines.join("\n");
@@ -514,44 +538,46 @@ export default class StrangePropertiesPlugin extends Plugin {
             ".metadata-property[data-property-key]"
         );
 
-        // Build property→section map using global section IDs that match the
-        // generated stylesheet. IDs are assigned by enumerating every section
-        // across every rule in order — disabled/non-matching rules still consume
-        // IDs so the numbering stays aligned with the CSS.
-        // First-rule-wins: a property key can only belong to one section.
-        const propertyToSection = new Map<string, { id: number; header: string }>();
+        // Build property→group map. Walk propertyRules (first enabled+matching rule wins),
+        // then defaultRule as the fallback. Group IDs are stable strings, not positional ints.
+        const propertyToGroup = new Map<string, { id: string; title: string }>();
         const claimedKeys = new Set<string>();
-        let sectionId = 0;
 
-        for (const rule of this.settings.sectionHeaders) {
-            for (const section of rule.sections) {
-                const id = sectionId++;
-                if (!rule.enabled || !this.sectionHeaderRuleMatches(rule, frontmatter)) continue;
-                for (const key of section.properties) {
-                    if (!claimedKeys.has(key)) {
-                        claimedKeys.add(key);
-                        propertyToSection.set(key, { id, header: section.header });
-                    }
-                }
+        type RuleCandidate = { enabled: boolean; condition?: PropertyRule["condition"]; groups: PropertyGroup[]; properties: PropertyEntry[] };
+        const rulesToCheck: RuleCandidate[] = [
+            ...this.settings.propertyRules,
+            { enabled: true, groups: this.settings.defaultRule.groups, properties: this.settings.defaultRule.properties },
+        ];
+
+        for (const rule of rulesToCheck) {
+            if (!rule.enabled) continue;
+            if (rule.condition && !this.propertyRuleMatches(rule.condition, frontmatter)) continue;
+            const groupMap = new Map(rule.groups.map(g => [g.id, g.title]));
+            for (const entry of rule.properties) {
+                if (claimedKeys.has(entry.property) || !entry.group) continue;
+                const title = groupMap.get(entry.group);
+                if (title === undefined) continue;
+                claimedKeys.add(entry.property);
+                propertyToGroup.set(entry.property, { id: entry.group, title });
             }
         }
 
         // Compute which headers would be injected in DOM order.
-        const expectedHeaders: Array<{ id: number; header: string }> = [];
-        let lastId: number | null = null;
+        const expectedHeaders: Array<{ id: string; title: string }> = [];
+        let lastId: string | null = null;
         for (const el of propertyEls) {
-            const sec = propertyToSection.get(el.getAttribute("data-property-key")!) ?? null;
-            if (sec && sec.id !== lastId) expectedHeaders.push({ id: sec.id, header: sec.header });
-            lastId = sec ? sec.id : null;
+            const grp = propertyToGroup.get(el.getAttribute("data-property-key")!) ?? null;
+            if (grp && grp.id !== lastId) expectedHeaders.push({ id: grp.id, title: grp.title });
+            lastId = grp ? grp.id : null;
         }
 
         // Skip clear+reinject if the DOM already has the right headers in order.
-        // This prevents a visible flash when frontmatter changes don't affect sections.
+        // This prevents a visible flash when frontmatter changes don't affect groups.
         const existingHeaders = [...propertiesEl.querySelectorAll<HTMLElement>("[data-sp-section]")];
         const alreadyCurrent =
             expectedHeaders.length === existingHeaders.length &&
             expectedHeaders.every((h, i) =>
-                existingHeaders[i].textContent === h.header &&
+                existingHeaders[i].textContent === h.title &&
                 existingHeaders[i].classList.contains(`sp-sec-${h.id}`)
             );
         if (alreadyCurrent) return;
@@ -559,30 +585,28 @@ export default class StrangePropertiesPlugin extends Plugin {
         this.clearSectionHeaders(contentEl);
         if (expectedHeaders.length === 0) return;
 
-        // Walk properties in DOM order: inject a header at each section start and
-        // mark every member property with its section class so CSS can hide orphaned
-        // headers when hide-empty is active.
+        // Walk properties in DOM order: inject a header at each group start and
+        // mark every member property with its group class for hide-empty CSS.
         lastId = null;
         for (const el of propertiesEl.querySelectorAll<HTMLElement>(
             ".metadata-property[data-property-key]"
         )) {
-            const sec = propertyToSection.get(el.getAttribute("data-property-key")!) ?? null;
-            if (sec) {
-                el.classList.add(`sp-sec-${sec.id}-prop`);
-                if (sec.id !== lastId) {
-                    propertiesEl.insertBefore(this.createSectionHeaderEl(sec.header, sec.id), el);
+            const grp = propertyToGroup.get(el.getAttribute("data-property-key")!) ?? null;
+            if (grp) {
+                el.classList.add(`sp-sec-${grp.id}-prop`);
+                if (grp.id !== lastId) {
+                    propertiesEl.insertBefore(this.createSectionHeaderEl(grp.title, grp.id), el);
                 }
             }
-            lastId = sec ? sec.id : null;
+            lastId = grp ? grp.id : null;
         }
     }
 
-    private sectionHeaderRuleMatches(
-        rule: SectionHeaderRule,
+    private propertyRuleMatches(
+        condition: NonNullable<PropertyRule["condition"]>,
         frontmatter: Record<string, unknown>
     ): boolean {
-        if (!rule.condition) return true;
-        const { property, operator, value } = rule.condition;
+        const { property, operator, value } = condition;
         const raw = frontmatter[property];
 
         if (operator === "exists") return raw !== undefined && raw !== null;
@@ -596,10 +620,10 @@ export default class StrangePropertiesPlugin extends Plugin {
         });
     }
 
-    private createSectionHeaderEl(label: string, id: number): HTMLElement {
-        const el = createEl("div", { cls: `sp-section-header sp-sec-${id}` });
+    private createSectionHeaderEl(title: string, groupId: string): HTMLElement {
+        const el = createEl("div", { cls: `sp-section-header sp-sec-${groupId}` });
         el.setAttribute("data-sp-section", "");
-        el.textContent = label;
+        el.textContent = title;
         return el;
     }
 
@@ -607,7 +631,7 @@ export default class StrangePropertiesPlugin extends Plugin {
         contentEl.querySelectorAll("[data-sp-section]").forEach((el) => el.remove());
         for (const el of contentEl.querySelectorAll<HTMLElement>(".metadata-property[data-property-key]")) {
             for (const cls of [...el.classList]) {
-                if (/^sp-sec-\d+-prop$/.test(cls)) el.classList.remove(cls);
+                if (/^sp-sec-.+-prop$/.test(cls)) el.classList.remove(cls);
             }
         }
     }
@@ -770,14 +794,14 @@ export default class StrangePropertiesPlugin extends Plugin {
 
                 const key = propEl.dataset.propertyKey!;
                 const entries = this.enumCache.get(key);
-                const assoc = this.settings.enumAssociations.find(a => a.property === key);
-                if (!entries || !assoc) return;
+                const propEntry = this.findPropertyEntry(key);
+                if (!entries || !propEntry?.enum) return;
 
                 // Blur active element to dismiss any autocomplete popup before opening picker.
                 (document.activeElement as HTMLElement)?.blur();
                 e.preventDefault();
                 e.stopPropagation();
-                this.openEnumPicker(valueEl, key, entries, assoc.storeAs, file);
+                this.openEnumPicker(valueEl, key, entries, propEntry.enum.storeAs, file);
             };
             contentEl.addEventListener('mousedown', handler, true);
             this.enumClickHandlers.set(contentEl, handler);

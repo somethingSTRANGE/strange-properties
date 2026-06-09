@@ -1,15 +1,54 @@
 # Strange Properties
 
-An Obsidian plugin that enhances the property panel with value-based CSS targeting, configurable class injection, section headers, and empty-property filtering.
-
----
+Strange Properties upgrades Obsidian's property panel with dropdown value pickers, section grouping, contextual help text, empty-property filtering, and CSS value targeting — built for notes with many structured properties.
 
 ## Features
 
-- **`data-property-value` injection** — adds a `data-property-value` attribute to every property row in both the inline note properties and the File Properties sidebar panel, enabling CSS to target rows by both key *and* value
-- **Class injection** — injects CSS classes onto the `view-content` element based on configurable rules, allowing vault-wide styles to be scoped to specific note types
-- **Section headers** — injects visible section headers into the property list, grouped by note type
-- **Hide empty properties** — toggle button to hide property rows with no value
+- [Hide Empty Properties](#hide-empty-properties)
+- [Property-Derived Note Classes](#property-derived-note-classes)
+- [Property Value Attributes](#property-value-attributes)
+- [Property Enhancements](#property-enhancements)
+  - [Property Dropdowns with Value Options](#property-dropdowns-with-value-options)
+  - [Property Groups](#property-groups)
+  - [Property Help Popups](#property-help-popup)
+
+---
+
+### Hide Empty Properties
+
+Some notes, especially those based on templates, might contain many unused properties. When this feature is enabled, a simple toggle is added to the bottom of the properties section that allows empty or value-less properties to be hidden.
+
+The toggle is global and affects the File Properties sidebar and all notes.
+
+When a new file property is added to a note, it's valueless by default and would disappear immediately while empty properties are hidden. Show all properties before adding a new one.
+
+### Property-Derived Note Classes
+
+Define rules that inject custom CSS classes onto the note view based on property values. A `type` property set to `character` can inject a `sp-type-character` class or a `draft` property, regardless of value, can inject a `sp-draft` class  — giving CSS snippets and themes a precise, conflict-free handle for scoping styles to specific note types.
+
+### Property Value Attributes
+
+Obsidian identifies each property row with an attribute containing the property's name, but provides no equivalent for its value. This feature adds a value attribute to every property row — enabling CSS snippets and themes to style rows based on both their name and their current value. For example, a `status` property could be highlighted only when set to `overdue`.
+
+### Property Enhancements
+
+Properties can be enhanced in a few ways, and those enhancements may be applied globally or isolated to specific notes based on whether the note has a specific property and what its value might be.
+
+You can isolate enhancements to notes that have a specific property defined, such as `type`. You can further isolate enhancements based on the value of that property, such as `type: character`. Any property not enhanced by an isolation rule can be enhanced globally.
+
+#### Property Dropdowns with Value Options
+
+Text and Number properties may be assigned a pre-set list of value options that become accessible through a dropdown button added to the right side of the input field. Selecting an item from the menu will populate the field with a specific value, decreasing the chance of entering the wrong data.
+
+The pre-set lists can be defined in settings and even generated dynamically based on existing notes in the vault.
+
+#### Property Groups
+
+Properties can be assigned a group, and if that group has a title, a header may appear above the property in the File Properties sidebar and notes while in Preview and Read modes. Consecutive properties that share a group assignment will also share a header.
+
+#### Property Help Popups
+
+Properties may be assigned help text that might define the property's usage or provide examples. When help is assigned to a property an icon will appear to its right. Hovering over the icon will show a popup containing the help text.
 
 ---
 

@@ -193,13 +193,13 @@
 .metadata-property[data-sp-enum] .metadata-property-value::after {
   content: '⌄';
   position: absolute;
-  right: 8px;
   top: 50%;
+  right: 8px;
   transform: translateY(-50%);
-  pointer-events: none;
   color: var(--text-muted);
   font-size: 1.1em;
   line-height: 1;
+  pointer-events: none;
 }
 
 /* Pad native inputs so content doesn't overlap the chevron */
@@ -214,3 +214,29 @@
   color: var(--text-error);
 }
 
+/*
+ *  Edit rule button with icon and text
+ */
+._modal.mod-settings .setting-item-control button[aria-label="Edit rule"] {
+  &::after {
+    content: 'Edit rule';
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: var(--input-height);
+    padding: var(--size-4-1) 0 var(--size-4-1) var(--size-4-2); /* var(--size-4-3); */
+    border: 0;
+    border-radius: var(--button-radius);
+    outline: none;
+    color: var(--text-color);
+    font-family: inherit;
+    font-size: var(--font-ui-small);
+    font-weight: var(--input-font-weight);
+    white-space: nowrap;
+    cursor: var(--cursor);
+    user-select: none;
+    --text-color: var(--text-normal);
+    -webkit-app-region: no-drag;
+    corner-shape: var(--button-corner-shape);
+  }
+}
