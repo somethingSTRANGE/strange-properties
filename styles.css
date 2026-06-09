@@ -1,5 +1,19 @@
 /* Strange Properties */
 
+/* ── Sortable drag-to-reorder ─────────────────────────────────────────────── */
+
+.sp-drag-handle {
+  cursor: grab;
+}
+
+.sp-drag-handle:active {
+  cursor: grabbing;
+}
+
+.sp-sortable-ghost {
+  opacity: 0.4;
+}
+
 /* Footer row containing "Add property" and the hide-empty toggle */
 .sp-property-footer {
   display: flex;

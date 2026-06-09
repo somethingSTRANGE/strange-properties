@@ -1,4 +1,5 @@
 import { AbstractInputSuggest, App, Modal, PluginSettingTab, sanitizeHTMLToDom, Setting, SettingGroup } from "obsidian";
+import Sortable from "sortablejs";
 import type StrangePropertiesPlugin from "./main";
 
 // ─── Property class rule ──────────────────────────────────────────────────────
@@ -216,8 +217,8 @@ class PropertyClassRuleModal extends Modal {
 
 function slugifyGroupId(title: string, existingIds: string[]): string {
     const base = title.toLowerCase()
-        .replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '')
-        || 'group';
+                     .replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '')
+                 || 'group';
     if (!existingIds.includes(base)) return base;
     let n = 2;
     while (existingIds.includes(`${base}-${n}`)) n++;
@@ -407,53 +408,75 @@ class PropertyGroupsModal extends Modal {
 
         const section = new SettingGroup(contentEl);
 
-        if (this.groups.length === 0)
+        if (this.groups.length === 0) {
             section.addSetting(s => s.setDesc("No groups defined."));
+        } else {
+            for (const group of this.groups) {
+                let handleEl: HTMLElement;
+                section.addSetting(s => s
+                    .setName(group.title || "(untitled)")
+                    .setDesc(group.id)
+                    .addExtraButton(b => {
+                        b.setIcon("grip-vertical").setTooltip("Drag to reorder");
+                        b.extraSettingsEl.addClass("sp-drag-handle");
+                        handleEl = b.extraSettingsEl;
+                    })
+                    .addExtraButton(b => b
+                        .setIcon("trash")
+                        .setTooltip("Delete")
+                        .then(b => b.extraSettingsEl.style.marginInlineEnd = "24px")
+                        .onClick(() => {
+                            const idx = this.groups.indexOf(group);
+                            this.properties.forEach(p => { if (p.group === group.id) p.group = null; });
+                            this.groups.splice(idx, 1);
+                            this.render();
+                        })
+                    )
+                    .addButton(b => b
+                        .setIcon("pencil")
+                        .setTooltip("Edit")
+                        .setButtonText("Edit")
+                        .onClick(() => {
+                            const idx = this.groups.indexOf(group);
+                            new PropertyGroupModal(this.app, group,
+                                this.groups.filter(g => g !== group).map(g => g.id),
+                                updated => {
+                                    this.groups[idx] = updated;
+                                    this.render();
+                                }
+                            ).open();
+                        })
+                    )
+                    .then(s => s.settingEl.insertBefore(handleEl, s.settingEl.querySelector(".setting-item-info")))
+                );
+            }
 
-        for (let i = 0; i < this.groups.length; i++) {
-            const idx = i;
-            const group = this.groups[idx];
-            section.addSetting(s => s
-                .setName(group.title || "(untitled)")
-                .setDesc(group.id)
-                .addExtraButton(b => b.setIcon("pencil").setTooltip("Edit")
-                    .onClick(() => {
-                        new PropertyGroupModal(this.app, group,
-                            this.groups.filter((_, j) => j !== idx).map(g => g.id),
-                            updated => { this.groups[idx] = updated; this.render(); }
-                        ).open();
-                    })
-                )
-                .addExtraButton(b => b.setIcon("arrow-up").setTooltip("Move up").setDisabled(idx === 0)
-                    .onClick(() => {
-                        [this.groups[idx - 1], this.groups[idx]] = [this.groups[idx], this.groups[idx - 1]];
-                        this.render();
-                    })
-                )
-                .addExtraButton(b => b.setIcon("arrow-down").setTooltip("Move down").setDisabled(idx === this.groups.length - 1)
-                    .then(b => b.extraSettingsEl.style.marginInlineEnd = "24px")
-                    .onClick(() => {
-                        [this.groups[idx + 1], this.groups[idx]] = [this.groups[idx], this.groups[idx + 1]];
-                        this.render();
-                    })
-                )
-                .addExtraButton(b => b.setIcon("trash").setTooltip("Delete")
-                    .onClick(() => {
-                        this.properties.forEach(p => { if (p.group === group.id) p.group = null; });
-                        this.groups.splice(idx, 1);
-                        this.render();
-                    })
-                )
-            );
+            Sortable.create(section.listEl, {
+                handle: ".sp-drag-handle",
+                animation: 150,
+                ghostClass: "sp-sortable-ghost",
+                onEnd: ({ oldIndex, newIndex }) => {
+                    if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return;
+                    const [moved] = this.groups.splice(oldIndex, 1);
+                    this.groups.splice(newIndex, 0, moved);
+                    this.render();
+                },
+            });
         }
 
         section.addSetting(s => s
-            .addButton(b => b.setButtonText("Add group").onClick(() => {
-                new PropertyGroupModal(this.app, { id: '', title: '' },
-                    this.groups.map(g => g.id),
-                    added => { this.groups.push(added); this.render(); }
-                ).open();
-            }))
+            .addButton(b => b
+                .setButtonText("Add group")
+                .onClick(() => {
+                    new PropertyGroupModal(this.app, { id: '', title: '' },
+                        this.groups.map(g => g.id),
+                        added => {
+                            this.groups.push(added);
+                            this.render();
+                        }
+                    ).open();
+                })
+            )
         );
 
         new Setting(contentEl)
@@ -495,63 +518,82 @@ class PropertyEntriesModal extends Modal {
 
         const section = new SettingGroup(contentEl);
 
-        if (this.properties.length === 0)
+        if (this.properties.length === 0) {
             section.addSetting(s => s.setDesc("No properties defined."));
+        } else {
+            for (const entry of this.properties) {
+                const groupTitle = entry.group
+                    ? (this.groups.find(g => g.id === entry.group)?.title ?? entry.group)
+                    : null;
+                const enumLabel = entry.enum
+                    ? (this.staticEnums.find(e => e.id === entry.enum!.id)?.name ?? entry.enum.id)
+                    : null;
+                const badges = [groupTitle, enumLabel].filter(Boolean).join(", ");
 
-        for (let i = 0; i < this.properties.length; i++) {
-            const idx = i;
-            const entry = this.properties[idx];
-            const groupTitle = entry.group
-                ? (this.groups.find(g => g.id === entry.group)?.title ?? entry.group)
-                : null;
-            const enumLabel = entry.enum
-                ? (this.staticEnums.find(e => e.id === entry.enum!.id)?.name ?? entry.enum.id)
-                : null;
-            const badges = [groupTitle, enumLabel].filter(Boolean).join(", ");
+                let handleEl: HTMLElement;
+                section.addSetting(s => s
+                    .setName(entry.property || "(unnamed)")
+                    .setDesc(badges || " ")
+                    .addExtraButton(b => {
+                        b.setIcon("grip-vertical").setTooltip("Drag to reorder");
+                        b.extraSettingsEl.addClass("sp-drag-handle");
+                        handleEl = b.extraSettingsEl;
+                    })
+                    .addExtraButton(b => b.setIcon("pencil").setTooltip("Edit")
+                        .onClick(() => {
+                            const idx = this.properties.indexOf(entry);
+                            new PropertyEntryModal(this.app, entry, this.groups, this.staticEnums,
+                                updated => {
+                                    this.properties[idx] = updated;
+                                    this.render();
+                                }
+                            ).open();
+                        })
+                    )
+                    .addExtraButton(b => b.setIcon("trash").setTooltip("Delete")
+                        .onClick(() => {
+                            new ConfirmModal(this.app,
+                                sanitizeHTMLToDom(`Delete property entry for <code>${entry.property || "(unnamed)"}</code>?`),
+                                () => {
+                                    const idx = this.properties.indexOf(entry);
+                                    this.properties.splice(idx, 1);
+                                    this.render();
+                                },
+                                2
+                            ).open();
+                        })
+                    )
+                    .then(s => s.settingEl.insertBefore(handleEl, s.settingEl.querySelector(".setting-item-info")))
+                );
+            }
 
-            section.addSetting(s => s
-                .setName(entry.property || "(unnamed)")
-                .setDesc(badges || " ")
-                .addExtraButton(b => b.setIcon("pencil").setTooltip("Edit")
-                    .onClick(() => {
-                        new PropertyEntryModal(this.app, entry, this.groups, this.staticEnums,
-                            updated => { this.properties[idx] = updated; this.render(); }
-                        ).open();
-                    })
-                )
-                .addExtraButton(b => b.setIcon("arrow-up").setTooltip("Move up").setDisabled(idx === 0)
-                    .onClick(() => {
-                        [this.properties[idx - 1], this.properties[idx]] = [this.properties[idx], this.properties[idx - 1]];
-                        this.render();
-                    })
-                )
-                .addExtraButton(b => b.setIcon("arrow-down").setTooltip("Move down").setDisabled(idx === this.properties.length - 1)
-                    .then(b => b.extraSettingsEl.style.marginInlineEnd = "24px")
-                    .onClick(() => {
-                        [this.properties[idx + 1], this.properties[idx]] = [this.properties[idx], this.properties[idx + 1]];
-                        this.render();
-                    })
-                )
-                .addExtraButton(b => b.setIcon("trash").setTooltip("Delete")
-                    .onClick(() => {
-                        new ConfirmModal(this.app,
-                            sanitizeHTMLToDom(`Delete property entry for <code>${entry.property || "(unnamed)"}</code>?`),
-                            () => { this.properties.splice(idx, 1); this.render(); },
-                            2
-                        ).open();
-                    })
-                )
-            );
+            Sortable.create(section.listEl, {
+                handle: ".sp-drag-handle",
+                animation: 150,
+                ghostClass: "sp-sortable-ghost",
+                onEnd: ({ oldIndex, newIndex }) => {
+                    if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return;
+                    const [moved] = this.properties.splice(oldIndex, 1);
+                    this.properties.splice(newIndex, 0, moved);
+                    this.render();
+                },
+            });
         }
 
         section.addSetting(s => s
-            .addButton(b => b.setButtonText("Add property").onClick(() => {
-                new PropertyEntryModal(this.app,
-                    { property: '', group: null, enum: null, help: null },
-                    this.groups, this.staticEnums,
-                    added => { this.properties.push(added); this.render(); }
-                ).open();
-            }))
+            .addButton(b => b
+                .setButtonText("Add property")
+                .onClick(() => {
+                    new PropertyEntryModal(this.app,
+                        { property: '', group: null, enum: null, help: null },
+                        this.groups, this.staticEnums,
+                        added => {
+                            this.properties.push(added);
+                            this.render();
+                        }
+                    ).open();
+                })
+            )
         );
 
         new Setting(contentEl)
@@ -821,17 +863,7 @@ export class StrangePropertiesSettingTab extends PluginSettingTab {
 
         // ── Property rules ────────────────────────────────────────────────────
 
-        const propertyRulesGroup = new SettingGroup(containerEl)
-            .setHeading("Property rules");
-        this.renderPropertyRules(propertyRulesGroup);
-
-        propertyRulesGroup.addSetting(s => s
-            .addButton(b => b.setButtonText("Add rule").onClick(async () => {
-                this.plugin.settings.propertyRules.push({ enabled: true, groups: [], properties: [] });
-                await this.plugin.saveSettings();
-                this.display();
-            }))
-        );
+        this.renderPropertyRules(containerEl);
 
         // ── Global defaults ───────────────────────────────────────────────────
 
@@ -847,43 +879,31 @@ export class StrangePropertiesSettingTab extends PluginSettingTab {
             properties: "File Properties panel",
         };
 
-        for (let i = 0; i < rules.length; i++) {
-            const idx = i;
-            const rule = rules[idx];
+        for (const rule of rules) {
             const name = rule.property
                 ? `<code>${rule.property}</code> → <code>${rule.template.replace("{name}", rule.property) || "(no template)"}</code>`
                 : `<code>(new rule)</code>`;
             const desc = `Apply to ${scopeLabel[rule.scope]}`;
 
+            let handleEl: HTMLElement;
             classRules.addSetting((setting) => setting
+                .setClass("sp-class-rule-card")
                 .setName(sanitizeHTMLToDom(name))
                 .setDesc(sanitizeHTMLToDom(desc))
+                .addExtraButton(b => {
+                    b.setIcon("grip-vertical").setTooltip("Drag to reorder");
+                    b.extraSettingsEl.addClass("sp-drag-handle");
+                    handleEl = b.extraSettingsEl;
+                })
                 .addExtraButton(bEdit => bEdit
                     .setIcon("pencil").setTooltip("Edit rule")
                     .onClick(() => {
                         new PropertyClassRuleModal(this.app, rule, async updated => {
+                            const idx = rules.indexOf(rule);
                             rules[idx] = updated;
                             await this.plugin.saveSettings();
                             this.display();
                         }).open();
-                    })
-                )
-                .addExtraButton(bMoveUp => bMoveUp
-                    .setIcon("arrow-up").setTooltip("Move up").setDisabled(idx === 0)
-                    .onClick(async () => {
-                        [rules[idx - 1], rules[idx]] = [rules[idx], rules[idx - 1]];
-                        await this.plugin.saveSettings();
-                        this.display();
-                    })
-                )
-                .addExtraButton(bMoveDown => bMoveDown
-                    .setIcon("arrow-down").setTooltip("Move down")
-                    .setDisabled(idx === rules.length - 1)
-                    .then(b => b.extraSettingsEl.style.marginInlineEnd = "24px")
-                    .onClick(async () => {
-                        [rules[idx + 1], rules[idx]] = [rules[idx], rules[idx + 1]];
-                        await this.plugin.saveSettings();
-                        this.display();
                     })
                 )
                 .addExtraButton(bDelete => bDelete
@@ -891,6 +911,7 @@ export class StrangePropertiesSettingTab extends PluginSettingTab {
                     .then(b => b.extraSettingsEl.style.marginInlineEnd = "24px")
                     .onClick(() => {
                         new ConfirmModal(this.app, sanitizeHTMLToDom(`Are you sure you want to delete the following property class rule?<div class="sp-settings-delete-item"><div class="sp-setting-item-name">${name}</div><div class="setting-item-description">${desc}</div></div>`), async () => {
+                            const idx = rules.indexOf(rule);
                             rules.splice(idx, 1);
                             await this.plugin.saveSettings();
                             this.display();
@@ -902,76 +923,103 @@ export class StrangePropertiesSettingTab extends PluginSettingTab {
                         rule.enabled = v;
                         await this.plugin.saveSettings();
                     }))
+                .then(s => s.settingEl.insertBefore(handleEl, s.settingEl.querySelector(".setting-item-info")))
             );
+        }
+
+        if (rules.length > 0) {
+            Sortable.create(classRules.listEl, {
+                draggable: ".sp-class-rule-card",
+                handle: ".sp-drag-handle",
+                animation: 150,
+                ghostClass: "sp-sortable-ghost",
+                onEnd: ({ oldIndex, newIndex }) => {
+                    if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return;
+                    const [moved] = rules.splice(oldIndex, 1);
+                    rules.splice(newIndex, 0, moved);
+                    this.plugin.saveSettings().then(() => this.display());
+                },
+            });
         }
     }
 
-    private renderPropertyRules(group: SettingGroup): void {
+    private renderPropertyRules(containerEl: HTMLElement): void {
         const rules = this.plugin.settings.propertyRules;
+        const group = new SettingGroup(containerEl).setHeading("Property rules");
+
         if (rules.length === 0) {
             group.addSetting(s => s.setDesc("No property rules configured."));
-            return;
+        } else {
+            for (const rule of rules) {
+                const cond = rule.condition;
+                const name = cond
+                    ? `<code>${cond.property}</code> ${cond.operator} <code>${cond.value}</code>`
+                    : "All notes";
+                const gc = rule.groups.length;
+                const pc = rule.properties.length;
+                const desc = `${gc} group${gc !== 1 ? 's' : ''} and ${pc} propert${pc !== 1 ? 'ies' : 'y'}`;
+                let handleEl: HTMLElement;
+                group.addSetting(s => s
+                    .setClass("sp-rule-card")
+                    .setName(sanitizeHTMLToDom(name))
+                    .setDesc(sanitizeHTMLToDom(desc))
+                    .addExtraButton(b => {
+                        b.setIcon("grip-vertical").setTooltip("Drag to reorder");
+                        b.extraSettingsEl.addClass("sp-drag-handle");
+                        handleEl = b.extraSettingsEl;
+                    })
+                    .addExtraButton(b => b
+                        .setIcon("pencil").setTooltip("Edit rule")
+                        .onClick(() => {
+                            const idx = rules.indexOf(rule);
+                            new PropertyRuleModal(this.app, rule, this.plugin.settings.staticEnums, async updated => {
+                                rules[idx] = updated;
+                                await this.plugin.saveSettings();
+                                this.display();
+                            }).open();
+                        })
+                    )
+                    .addExtraButton(b => b
+                        .setIcon("trash").setTooltip("Delete rule")
+                        .then(b => b.extraSettingsEl.style.marginInlineEnd = "24px")
+                        .onClick(() => {
+                            new ConfirmModal(this.app, sanitizeHTMLToDom(`Are you sure you want to delete the following property rule?<div class="sp-settings-delete-item"><div class="sp-setting-item-name">${name}</div><div class="setting-item-description">${desc}</div></div>`), async () => {
+                                const idx = rules.indexOf(rule);
+                                rules.splice(idx, 1);
+                                await this.plugin.saveSettings();
+                                this.display();
+                            }).open();
+                        })
+                    )
+                    .addToggle(t => t.setValue(rule.enabled).onChange(async v => {
+                        rule.enabled = v;
+                        await this.plugin.saveSettings();
+                    }))
+                    .then(s => s.settingEl.insertBefore(handleEl, s.settingEl.querySelector(".setting-item-info")))
+                );
+            }
+
+            Sortable.create(group.listEl, {
+                draggable: ".sp-rule-card",
+                handle: ".sp-drag-handle",
+                animation: 150,
+                ghostClass: "sp-sortable-ghost",
+                onEnd: ({ oldIndex, newIndex }) => {
+                    if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return;
+                    const [moved] = rules.splice(oldIndex, 1);
+                    rules.splice(newIndex, 0, moved);
+                    this.plugin.saveSettings().then(() => this.display());
+                },
+            });
         }
 
-        for (let i = 0; i < rules.length; i++) {
-            const idx = i;
-            const rule = rules[idx];
-
-            const cond = rule.condition;
-            const name = cond
-                ? `<code>${cond.property}</code> ${cond.operator} <code>${cond.value}</code>`
-                : "All notes";
-            const gc = rule.groups.length;
-            const pc = rule.properties.length;
-            const desc = `${gc} group${gc !== 1 ? 's' : ''} and ${pc} propert${pc !== 1 ? 'ies' : 'y'}`;
-            group.addSetting(s => s
-                .setName(sanitizeHTMLToDom(name))
-                .setDesc(sanitizeHTMLToDom(desc))
-                .addExtraButton(b => b
-                    .setIcon("pencil").setTooltip("Edit rule")
-                    .onClick(() => {
-                        new PropertyRuleModal(this.app, rule, this.plugin.settings.staticEnums, async updated => {
-                            rules[idx] = updated;
-                            await this.plugin.saveSettings();
-                            this.display();
-                        }).open();
-                    })
-                )
-                .addExtraButton(b => b
-                    .setIcon("arrow-up").setTooltip("Move up").setDisabled(idx === 0)
-                    .onClick(async () => {
-                        [rules[idx - 1], rules[idx]] = [rules[idx], rules[idx - 1]];
-                        await this.plugin.saveSettings();
-                        this.display();
-                    })
-                )
-                .addExtraButton(b => b
-                    .setIcon("arrow-down").setTooltip("Move down")
-                    .setDisabled(idx === rules.length - 1)
-                    .then(b => b.extraSettingsEl.style.marginInlineEnd = "24px")
-                    .onClick(async () => {
-                        [rules[idx + 1], rules[idx]] = [rules[idx], rules[idx + 1]];
-                        await this.plugin.saveSettings();
-                        this.display();
-                    })
-                )
-                .addExtraButton(b => b
-                    .setIcon("trash").setTooltip("Delete rule")
-                    .then(b => b.extraSettingsEl.style.marginInlineEnd = "24px")
-                    .onClick(async () => {
-                        new ConfirmModal(this.app, sanitizeHTMLToDom(`Are you sure you want to delete the following section header rule?<div class="sp-settings-delete-item"><div class="sp-setting-item-name">${name}</div><div class="setting-item-description">${desc}</div></div>`), async () => {
-                            rules.splice(idx, 1);
-                            await this.plugin.saveSettings();
-                            this.display();
-                        }).open();
-                    })
-                )
-                .addToggle(t => t.setValue(rule.enabled).onChange(async v => {
-                    rule.enabled = v;
-                    await this.plugin.saveSettings();
-                }))
-            );
-        }
+        group.addSetting(s => s
+            .addButton(b => b.setButtonText("Add rule").onClick(async () => {
+                this.plugin.settings.propertyRules.push({ enabled: true, groups: [], properties: [] });
+                await this.plugin.saveSettings();
+                this.display();
+            }))
+        );
     }
 
     private renderDefaultRule(group: SettingGroup): void {
@@ -1003,7 +1051,6 @@ export class StrangePropertiesSettingTab extends PluginSettingTab {
                      + `<div class="sp-settings-banner-desc">${this.plugin.manifest.description}</div>`;
 
         const rawFunding = this.plugin.fundingUrl;
-        console.log(rawFunding);
 
         const fundingLinks: { label: string; url: string }[] =
             !rawFunding ? [] :
@@ -1012,7 +1059,6 @@ export class StrangePropertiesSettingTab extends PluginSettingTab {
                         url: rawFunding
                     }] :
                     Object.entries(rawFunding).map(([label, url]) => ({ label, url }));
-        console.log(fundingLinks);
 
         const banner = new Setting(containerEl)
             .setClass("sp-settings-banner")
@@ -1039,7 +1085,6 @@ export class StrangePropertiesSettingTab extends PluginSettingTab {
             );
 
         fundingLinks.forEach(({ label, url }, i) => {
-            console.log(label, url);
             banner.addExtraButton(b => {
                 b.setIcon("heart").setTooltip(label)
                     .then(b => b.extraSettingsEl.classList.add('sp-funding-button'))
