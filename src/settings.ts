@@ -10,7 +10,7 @@ export interface PropertyClassRule {
     scope: "both" | "notes" | "properties";
 }
 
-// ─── Property rule (new schema) ───────────────────────────────────────────────
+// ─── Property rule ───────────────────────────────────────────────────────────
 
 export interface PropertyGroup {
     id: string;
@@ -38,32 +38,6 @@ export interface PropertyRule {
 export interface DefaultPropertyRule {
     groups: PropertyGroup[];
     properties: PropertyEntry[];
-}
-
-// ─── Legacy interfaces (preserved for reference / migration) ──────────────────
-// These were superseded by PropertyRule / PropertyGroup / PropertyEntry.
-// SectionHeaderRuleModal and PropertySectionModal below still reference them
-// and serve as reference for the new rule editing UI.
-
-export interface PropertySection {
-    header: string;
-    properties: string[];
-}
-
-export interface SectionHeaderRule {
-    enabled: boolean;
-    condition?: {
-        property: string;
-        operator: "exists" | "is" | "contains" | "starts-with";
-        value: string;
-    };
-    sections: PropertySection[];
-}
-
-export interface EnumAssociation {
-    property: string;
-    enumId: string;
-    storeAs: "text" | "number";
 }
 
 // ─── Static enum ─────────────────────────────────────────────────────────────
@@ -130,287 +104,6 @@ class PropertySuggest extends AbstractInputSuggest<string> {
         this.setValue(value);
         this.el.dispatchEvent(new Event("input"));
         this.close();
-    }
-}
-
-// ─── Legacy: Section → Properties modal ──────────────────────────────────────
-// Preserved as reference for the new property entry editing UI.
-
-class PropertySectionModal extends Modal {
-    private section: PropertySection;
-    private readonly onSave: (section: PropertySection) => void;
-
-    constructor(app: App, section: PropertySection, onSave: (section: PropertySection) => void) {
-        super(app);
-        this.section = { ...section, properties: [...section.properties] };
-        this.onSave = onSave;
-    }
-
-    onOpen(): void {
-        this.setTitle("Edit section");
-        this.render();
-    }
-
-    onClose(): void {
-        this.contentEl.empty();
-    }
-
-    private render(): void {
-        const { contentEl } = this;
-        contentEl.classList.add("sp-settings-modal-level-2");
-        contentEl.empty();
-
-        new SettingGroup(contentEl)
-            .addSetting((setting) => setting
-                .setName("Section header")
-                .addText(t => t
-                    .setValue(this.section.header)
-                    .onChange(v => { this.section.header = v; })
-                )
-            );
-
-        const sections = new SettingGroup(contentEl)
-            .addClass("sp-setting-section-properties")
-            .setHeading("Properties")
-
-        for (let i = 0; i < this.section.properties.length; i++) {
-            const idx = i;
-            sections.addSetting((setting) => setting
-                .setClass("sp-setting-section-property")
-                .addText(t => {
-                    t.setValue(this.section.properties[idx]);
-                    new PropertySuggest(this.app, t.inputEl);
-                    t.onChange(v => { this.section.properties[idx] = v; });
-                })
-                .addExtraButton(b => b
-                    .setIcon("arrow-up").setTooltip("Move up").setDisabled(idx === 0)
-                    .onClick(() => {
-                        [this.section.properties[idx - 1], this.section.properties[idx]] =
-                            [this.section.properties[idx], this.section.properties[idx - 1]];
-                        this.render();
-                    }))
-                .addExtraButton(b => b
-                    .setIcon("arrow-down").setTooltip("Move down")
-                    .setDisabled(idx === this.section.properties.length - 1)
-                    .then(b => b.extraSettingsEl.style.marginInlineEnd = "24px")
-                    .onClick(() => {
-                        [this.section.properties[idx + 1], this.section.properties[idx]] =
-                            [this.section.properties[idx], this.section.properties[idx + 1]];
-                        this.render();
-                    }))
-                .addExtraButton(b => b
-                    .setIcon("trash").setTooltip("Remove")
-                    .onClick(() => {
-                        this.section.properties.splice(idx, 1);
-                        this.render();
-                    })
-                )
-            );
-        }
-
-        sections.addSetting((setting) => setting
-            .addButton(b => b.setButtonText("Add property").onClick(() => {
-                    this.section.properties.push("");
-                    this.render();
-                })
-            )
-        );
-
-        new Setting(contentEl)
-            .then(s => s.settingEl.style.borderTop = "0")
-            .addButton(b => b
-                .setButtonText("Save")
-                .setCta()
-                .onClick(() => {
-                    this.onSave(this.section);
-                    this.close();
-                })
-            )
-            .addButton(b => b
-                .setButtonText("Cancel")
-                .onClick(() => this.close())
-            );
-    }
-}
-
-// ─── Legacy: Section header rule modal ────────────────────────────────────────
-// Preserved as reference for the new property rule editing UI.
-
-class SectionHeaderRuleModal extends Modal {
-    private rule: SectionHeaderRule;
-    private conditionDraft: { property: string; operator: "exists" | "is" | "contains" | "starts-with"; value: string };
-    private readonly onSave: (rule: SectionHeaderRule) => void;
-
-    constructor(app: App, rule: SectionHeaderRule, onSave: (rule: SectionHeaderRule) => void) {
-        super(app);
-        this.rule = {
-            ...rule,
-            condition: rule.condition ? {
-                ...rule.condition,
-                operator: rule.condition.operator ?? "is",
-            } : undefined,
-            sections: rule.sections.map(s => ({ ...s, properties: [...s.properties] })),
-        };
-        this.conditionDraft = this.rule.condition
-            ? { ...this.rule.condition }
-            : { property: "", operator: "is", value: "" };
-        this.onSave = onSave;
-    }
-
-    onClose(): void {
-        this.contentEl.empty();
-    }
-
-    onOpen(): void {
-        this.setTitle("Edit section header rule");
-        this.render();
-    }
-
-    private render(): void {
-        const { contentEl } = this;
-        contentEl.classList.add("sp-settings-modal-level-1");
-        contentEl.empty();
-
-        new SettingGroup(contentEl)
-            .addSetting((setting) => setting
-                .setName("Enabled")
-                .addToggle(t => t
-                    .setValue(this.rule.enabled)
-                    .onChange(v => { this.rule.enabled = v; })
-                )
-            )
-            .addSetting((setting) => setting
-                .setName("Condition")
-                .setDesc("Apply sections only when a property matches a specific value. When off, sections applies to all views.")
-                .addToggle(t => t
-                    .setValue(!!this.rule.condition)
-                    .onChange(v => {
-                        this.rule.condition = v ? { ...this.conditionDraft } : undefined;
-                        this.render();
-                    })
-                )
-            )
-            .addSetting((setting) => setting
-                .setName("Property")
-                .setDesc("The property name to examine.")
-                .addText(t => {
-                    t.setValue(this.conditionDraft.property);
-                    new PropertySuggest(this.app, t.inputEl);
-                    t.onChange(v => {
-                        this.conditionDraft.property = v;
-                        if (this.rule.condition) this.rule.condition.property = v;
-                    });
-                })
-                .then(s => s.settingEl
-                    .toggleClass("sp-setting-disabled", !this.rule.condition)
-                )
-            )
-            .addSetting((setting) => setting
-                .setName("Operator")
-                .setDesc("The property name to examine.")
-                .addDropdown(d => d
-                    .addOptions({ is: "is", contains: "contains", "starts-with": "starts with", exists: "exists" })
-                    .setValue(this.conditionDraft.operator)
-                    .onChange(v => {
-                        this.conditionDraft.operator = v as "exists" | "is" | "contains" | "starts-with";
-                        if (this.rule.condition) this.rule.condition.operator = this.conditionDraft.operator;
-                        this.render();
-                    })
-                )
-                .then(s => s.settingEl
-                    .toggleClass("sp-setting-disabled", !this.rule.condition)
-                )
-            )
-            .addSetting((setting) => setting
-                .setName("Value")
-                .addText(t => t
-                    .setValue(this.conditionDraft.value)
-                    .onChange(v => {
-                        this.conditionDraft.value = v;
-                        if (this.rule.condition) this.rule.condition.value = v;
-                    })
-                )
-                .then(s => s.settingEl
-                    .toggleClass("sp-setting-disabled", !this.rule.condition || this.conditionDraft.operator === "exists")
-                )
-            );
-
-        const sections = new SettingGroup(contentEl)
-            .setHeading("Sections");
-
-        for (let i = 0; i < this.rule.sections.length; i++) {
-            const idx = i;
-            const section = this.rule.sections[idx];
-            const n = section.properties.length;
-
-            const name = section.header || "(unnamed)";
-            const desc = `${n} propert${n === 1 ? "y" : "ies"}`;
-
-            sections.addSetting((setting) => setting
-                .setName(name)
-                .setDesc(desc)
-                .addExtraButton(b => b
-                    .setIcon("pencil").setTooltip("Edit")
-                    .onClick(() => {
-                        new PropertySectionModal(this.app, section, updated => {
-                            this.rule.sections[idx] = updated;
-                            this.render();
-                        }).open();
-                    })
-                )
-                .addExtraButton(b => b
-                    .setIcon("arrow-up").setTooltip("Move up").setDisabled(idx === 0)
-                    .onClick(() => {
-                        [this.rule.sections[idx - 1], this.rule.sections[idx]] =
-                            [this.rule.sections[idx], this.rule.sections[idx - 1]];
-                        this.render();
-                    })
-                )
-                .addExtraButton(b => b
-                    .setIcon("arrow-down").setTooltip("Move down")
-                    .setDisabled(idx === this.rule.sections.length - 1)
-                    .then(b => b.extraSettingsEl.style.marginInlineEnd = "24px")
-                    .onClick(() => {
-                        [this.rule.sections[idx + 1], this.rule.sections[idx]] =
-                            [this.rule.sections[idx], this.rule.sections[idx + 1]];
-                        this.render();
-                    })
-                )
-                .addExtraButton(b => b
-                    .setIcon("trash").setTooltip("Delete")
-                    .onClick(() => {
-                        new ConfirmModal(this.app, sanitizeHTMLToDom(`Are you sure you want to delete the following section header?<div class="sp-settings-delete-item"><div class="sp-setting-item-name">${name}</div><div class="setting-item-description">${desc}</div></div>`), async () => {
-                            this.rule.sections.splice(idx, 1);
-                            this.render();
-                        }, 2).open();
-                    })
-                )
-            );
-        }
-
-        sections.addSetting((setting) => setting
-            .addButton(b => b.setButtonText("Add section").onClick(() => {
-                    this.rule.sections.push({ header: "", properties: [] });
-                    this.render();
-                })
-            )
-        );
-
-        new Setting(contentEl)
-            .then(s => s.settingEl.style.borderTop = "0")
-            .addButton(b => b
-                .setButtonText("Save")
-                .setCta()
-                .onClick(() => {
-                    this.onSave(this.rule);
-                    this.close();
-                })
-            )
-            .addButton(b => b
-                .setButtonText("Cancel")
-                .onClick(() => this.close()
-                )
-            );
     }
 }
 
@@ -683,6 +376,190 @@ class PropertyEntryModal extends Modal {
     }
 }
 
+// ─── Property groups modal ───────────────────────────────────────────────────
+
+class PropertyGroupsModal extends Modal {
+    private readonly groups: PropertyGroup[];
+    private readonly properties: PropertyEntry[];
+    private readonly onUpdate: () => void;
+
+    constructor(app: App, groups: PropertyGroup[], properties: PropertyEntry[], onUpdate: () => void) {
+        super(app);
+        this.groups = groups;
+        this.properties = properties;
+        this.onUpdate = onUpdate;
+    }
+
+    onOpen(): void {
+        this.setTitle("Edit groups");
+        this.render();
+    }
+
+    onClose(): void {
+        this.contentEl.empty();
+        this.onUpdate();
+    }
+
+    private render(): void {
+        const { contentEl } = this;
+        contentEl.classList.add("sp-settings-modal-level-2");
+        contentEl.empty();
+
+        const section = new SettingGroup(contentEl);
+
+        if (this.groups.length === 0)
+            section.addSetting(s => s.setDesc("No groups defined."));
+
+        for (let i = 0; i < this.groups.length; i++) {
+            const idx = i;
+            const group = this.groups[idx];
+            section.addSetting(s => s
+                .setName(group.title || "(untitled)")
+                .setDesc(group.id)
+                .addExtraButton(b => b.setIcon("pencil").setTooltip("Edit")
+                    .onClick(() => {
+                        new PropertyGroupModal(this.app, group,
+                            this.groups.filter((_, j) => j !== idx).map(g => g.id),
+                            updated => { this.groups[idx] = updated; this.render(); }
+                        ).open();
+                    })
+                )
+                .addExtraButton(b => b.setIcon("arrow-up").setTooltip("Move up").setDisabled(idx === 0)
+                    .onClick(() => {
+                        [this.groups[idx - 1], this.groups[idx]] = [this.groups[idx], this.groups[idx - 1]];
+                        this.render();
+                    })
+                )
+                .addExtraButton(b => b.setIcon("arrow-down").setTooltip("Move down").setDisabled(idx === this.groups.length - 1)
+                    .then(b => b.extraSettingsEl.style.marginInlineEnd = "24px")
+                    .onClick(() => {
+                        [this.groups[idx + 1], this.groups[idx]] = [this.groups[idx], this.groups[idx + 1]];
+                        this.render();
+                    })
+                )
+                .addExtraButton(b => b.setIcon("trash").setTooltip("Delete")
+                    .onClick(() => {
+                        this.properties.forEach(p => { if (p.group === group.id) p.group = null; });
+                        this.groups.splice(idx, 1);
+                        this.render();
+                    })
+                )
+            );
+        }
+
+        section.addSetting(s => s
+            .addButton(b => b.setButtonText("Add group").onClick(() => {
+                new PropertyGroupModal(this.app, { id: '', title: '' },
+                    this.groups.map(g => g.id),
+                    added => { this.groups.push(added); this.render(); }
+                ).open();
+            }))
+        );
+
+        new Setting(contentEl)
+            .then(s => s.settingEl.style.borderTop = "0")
+            .addButton(b => b.setButtonText("Done").setCta().onClick(() => this.close()));
+    }
+}
+
+// ─── Property entries modal ───────────────────────────────────────────────────
+
+class PropertyEntriesModal extends Modal {
+    private readonly groups: PropertyGroup[];
+    private readonly properties: PropertyEntry[];
+    private readonly staticEnums: StaticEnum[];
+    private readonly onUpdate: () => void;
+
+    constructor(app: App, groups: PropertyGroup[], properties: PropertyEntry[], staticEnums: StaticEnum[], onUpdate: () => void) {
+        super(app);
+        this.groups = groups;
+        this.properties = properties;
+        this.staticEnums = staticEnums;
+        this.onUpdate = onUpdate;
+    }
+
+    onOpen(): void {
+        this.setTitle("Edit properties");
+        this.render();
+    }
+
+    onClose(): void {
+        this.contentEl.empty();
+        this.onUpdate();
+    }
+
+    private render(): void {
+        const { contentEl } = this;
+        contentEl.classList.add("sp-settings-modal-level-2");
+        contentEl.empty();
+
+        const section = new SettingGroup(contentEl);
+
+        if (this.properties.length === 0)
+            section.addSetting(s => s.setDesc("No properties defined."));
+
+        for (let i = 0; i < this.properties.length; i++) {
+            const idx = i;
+            const entry = this.properties[idx];
+            const groupTitle = entry.group
+                ? (this.groups.find(g => g.id === entry.group)?.title ?? entry.group)
+                : null;
+            const enumLabel = entry.enum
+                ? (this.staticEnums.find(e => e.id === entry.enum!.id)?.name ?? entry.enum.id)
+                : null;
+            const badges = [groupTitle, enumLabel].filter(Boolean).join(", ");
+
+            section.addSetting(s => s
+                .setName(entry.property || "(unnamed)")
+                .setDesc(badges || " ")
+                .addExtraButton(b => b.setIcon("pencil").setTooltip("Edit")
+                    .onClick(() => {
+                        new PropertyEntryModal(this.app, entry, this.groups, this.staticEnums,
+                            updated => { this.properties[idx] = updated; this.render(); }
+                        ).open();
+                    })
+                )
+                .addExtraButton(b => b.setIcon("arrow-up").setTooltip("Move up").setDisabled(idx === 0)
+                    .onClick(() => {
+                        [this.properties[idx - 1], this.properties[idx]] = [this.properties[idx], this.properties[idx - 1]];
+                        this.render();
+                    })
+                )
+                .addExtraButton(b => b.setIcon("arrow-down").setTooltip("Move down").setDisabled(idx === this.properties.length - 1)
+                    .then(b => b.extraSettingsEl.style.marginInlineEnd = "24px")
+                    .onClick(() => {
+                        [this.properties[idx + 1], this.properties[idx]] = [this.properties[idx], this.properties[idx + 1]];
+                        this.render();
+                    })
+                )
+                .addExtraButton(b => b.setIcon("trash").setTooltip("Delete")
+                    .onClick(() => {
+                        new ConfirmModal(this.app,
+                            sanitizeHTMLToDom(`Delete property entry for <code>${entry.property || "(unnamed)"}</code>?`),
+                            () => { this.properties.splice(idx, 1); this.render(); },
+                            2
+                        ).open();
+                    })
+                )
+            );
+        }
+
+        section.addSetting(s => s
+            .addButton(b => b.setButtonText("Add property").onClick(() => {
+                new PropertyEntryModal(this.app,
+                    { property: '', group: null, enum: null, help: null },
+                    this.groups, this.staticEnums,
+                    added => { this.properties.push(added); this.render(); }
+                ).open();
+            }))
+        );
+
+        new Setting(contentEl)
+            .then(s => s.settingEl.style.borderTop = "0")
+            .addButton(b => b.setButtonText("Done").setCta().onClick(() => this.close()));
+    }
+}
+
 // ─── Property rule modal ──────────────────────────────────────────────────────
 
 class PropertyRuleModal extends Modal {
@@ -776,8 +653,23 @@ class PropertyRuleModal extends Modal {
                 .then(s => s.settingEl.toggleClass("sp-setting-disabled", !this.rule.condition || this.conditionDraft.operator === "exists"))
             );
 
-        this.renderGroupsList(contentEl, this.rule.groups, this.rule.properties);
-        this.renderPropertiesList(contentEl, this.rule.groups, this.rule.properties);
+        const ng = this.rule.groups.length;
+        const np = this.rule.properties.length;
+        new SettingGroup(contentEl)
+            .addSetting(s => s
+                .setName("Groups")
+                .setDesc(`${ng} group${ng !== 1 ? 's' : ''}`)
+                .addButton(b => b.setButtonText("Edit groups").onClick(() => {
+                    new PropertyGroupsModal(this.app, this.rule.groups, this.rule.properties, () => this.render()).open();
+                }))
+            )
+            .addSetting(s => s
+                .setName("Properties")
+                .setDesc(`${np} propert${np !== 1 ? 'ies' : 'y'}`)
+                .addButton(b => b.setButtonText("Edit properties").onClick(() => {
+                    new PropertyEntriesModal(this.app, this.rule.groups, this.rule.properties, this.staticEnums, () => this.render()).open();
+                }))
+            );
 
         new Setting(contentEl)
             .then(s => s.settingEl.style.borderTop = "0")
@@ -786,117 +678,6 @@ class PropertyRuleModal extends Modal {
                 this.close();
             }))
             .addButton(b => b.setButtonText("Cancel").onClick(() => this.close()));
-    }
-
-    private renderGroupsList(contentEl: HTMLElement, groups: PropertyGroup[], properties: PropertyEntry[]): void {
-        const section = new SettingGroup(contentEl).setHeading("Groups");
-
-        for (let i = 0; i < groups.length; i++) {
-            const idx = i;
-            const group = groups[idx];
-            section.addSetting(s => s
-                .setName(group.title || "(untitled)")
-                .setDesc(group.id)
-                .addExtraButton(b => b.setIcon("pencil").setTooltip("Edit")
-                    .onClick(() => {
-                        new PropertyGroupModal(this.app, group,
-                            groups.filter((_, j) => j !== idx).map(g => g.id),
-                            updated => { groups[idx] = updated; this.render(); }
-                        ).open();
-                    })
-                )
-                .addExtraButton(b => b.setIcon("arrow-up").setTooltip("Move up").setDisabled(idx === 0)
-                    .onClick(() => {
-                        [groups[idx - 1], groups[idx]] = [groups[idx], groups[idx - 1]];
-                        this.render();
-                    })
-                )
-                .addExtraButton(b => b.setIcon("arrow-down").setTooltip("Move down").setDisabled(idx === groups.length - 1)
-                    .then(b => b.extraSettingsEl.style.marginInlineEnd = "24px")
-                    .onClick(() => {
-                        [groups[idx + 1], groups[idx]] = [groups[idx], groups[idx + 1]];
-                        this.render();
-                    })
-                )
-                .addExtraButton(b => b.setIcon("trash").setTooltip("Delete")
-                    .onClick(() => {
-                        // Null out group reference on any properties that reference this group
-                        properties.forEach(p => { if (p.group === group.id) p.group = null; });
-                        groups.splice(idx, 1);
-                        this.render();
-                    })
-                )
-            );
-        }
-
-        section.addSetting(s => s
-            .addButton(b => b.setButtonText("Add group").onClick(() => {
-                new PropertyGroupModal(this.app, { id: '', title: '' },
-                    groups.map(g => g.id),
-                    added => { groups.push(added); this.render(); }
-                ).open();
-            }))
-        );
-    }
-
-    private renderPropertiesList(contentEl: HTMLElement, groups: PropertyGroup[], properties: PropertyEntry[]): void {
-        const section = new SettingGroup(contentEl).setHeading("Properties");
-
-        for (let i = 0; i < properties.length; i++) {
-            const idx = i;
-            const entry = properties[idx];
-            const groupTitle = entry.group
-                ? (groups.find(g => g.id === entry.group)?.title ?? entry.group)
-                : null;
-            const enumLabel = entry.enum
-                ? (this.staticEnums.find(e => e.id === entry.enum!.id)?.name ?? entry.enum.id)
-                : null;
-            const badges = [groupTitle, enumLabel].filter(Boolean).join(", ");
-
-            section.addSetting(s => s
-                .setName(entry.property || "(unnamed)")
-                .setDesc(badges || " ")
-                .addExtraButton(b => b.setIcon("pencil").setTooltip("Edit")
-                    .onClick(() => {
-                        new PropertyEntryModal(this.app, entry, groups, this.staticEnums,
-                            updated => { properties[idx] = updated; this.render(); }
-                        ).open();
-                    })
-                )
-                .addExtraButton(b => b.setIcon("arrow-up").setTooltip("Move up").setDisabled(idx === 0)
-                    .onClick(() => {
-                        [properties[idx - 1], properties[idx]] = [properties[idx], properties[idx - 1]];
-                        this.render();
-                    })
-                )
-                .addExtraButton(b => b.setIcon("arrow-down").setTooltip("Move down").setDisabled(idx === properties.length - 1)
-                    .then(b => b.extraSettingsEl.style.marginInlineEnd = "24px")
-                    .onClick(() => {
-                        [properties[idx + 1], properties[idx]] = [properties[idx], properties[idx + 1]];
-                        this.render();
-                    })
-                )
-                .addExtraButton(b => b.setIcon("trash").setTooltip("Delete")
-                    .onClick(() => {
-                        new ConfirmModal(this.app,
-                            sanitizeHTMLToDom(`Delete property entry for <code>${entry.property || "(unnamed)"}</code>?`),
-                            () => { properties.splice(idx, 1); this.render(); },
-                            2
-                        ).open();
-                    })
-                )
-            );
-        }
-
-        section.addSetting(s => s
-            .addButton(b => b.setButtonText("Add property").onClick(() => {
-                new PropertyEntryModal(this.app,
-                    { property: '', group: null, enum: null, help: null },
-                    groups, this.staticEnums,
-                    added => { properties.push(added); this.render(); }
-                ).open();
-            }))
-        );
     }
 }
 
@@ -931,8 +712,23 @@ class DefaultPropertyRuleModal extends Modal {
         contentEl.classList.add("sp-settings-modal-level-1");
         contentEl.empty();
 
-        this.renderGroupsList(contentEl, this.rule.groups, this.rule.properties);
-        this.renderPropertiesList(contentEl, this.rule.groups, this.rule.properties);
+        const ng = this.rule.groups.length;
+        const np = this.rule.properties.length;
+        new SettingGroup(contentEl)
+            .addSetting(s => s
+                .setName("Groups")
+                .setDesc(`${ng} group${ng !== 1 ? 's' : ''}`)
+                .addButton(b => b.setButtonText("Edit groups").onClick(() => {
+                    new PropertyGroupsModal(this.app, this.rule.groups, this.rule.properties, () => this.render()).open();
+                }))
+            )
+            .addSetting(s => s
+                .setName("Properties")
+                .setDesc(`${np} propert${np !== 1 ? 'ies' : 'y'}`)
+                .addButton(b => b.setButtonText("Edit properties").onClick(() => {
+                    new PropertyEntriesModal(this.app, this.rule.groups, this.rule.properties, this.staticEnums, () => this.render()).open();
+                }))
+            );
 
         new Setting(contentEl)
             .then(s => s.settingEl.style.borderTop = "0")
@@ -941,116 +737,6 @@ class DefaultPropertyRuleModal extends Modal {
                 this.close();
             }))
             .addButton(b => b.setButtonText("Cancel").onClick(() => this.close()));
-    }
-
-    private renderGroupsList(contentEl: HTMLElement, groups: PropertyGroup[], properties: PropertyEntry[]): void {
-        const section = new SettingGroup(contentEl).setHeading("Groups");
-
-        for (let i = 0; i < groups.length; i++) {
-            const idx = i;
-            const group = groups[idx];
-            section.addSetting(s => s
-                .setName(group.title || "(untitled)")
-                .setDesc(group.id)
-                .addExtraButton(b => b.setIcon("pencil").setTooltip("Edit")
-                    .onClick(() => {
-                        new PropertyGroupModal(this.app, group,
-                            groups.filter((_, j) => j !== idx).map(g => g.id),
-                            updated => { groups[idx] = updated; this.render(); }
-                        ).open();
-                    })
-                )
-                .addExtraButton(b => b.setIcon("arrow-up").setTooltip("Move up").setDisabled(idx === 0)
-                    .onClick(() => {
-                        [groups[idx - 1], groups[idx]] = [groups[idx], groups[idx - 1]];
-                        this.render();
-                    })
-                )
-                .addExtraButton(b => b.setIcon("arrow-down").setTooltip("Move down").setDisabled(idx === groups.length - 1)
-                    .then(b => b.extraSettingsEl.style.marginInlineEnd = "24px")
-                    .onClick(() => {
-                        [groups[idx + 1], groups[idx]] = [groups[idx], groups[idx + 1]];
-                        this.render();
-                    })
-                )
-                .addExtraButton(b => b.setIcon("trash").setTooltip("Delete")
-                    .onClick(() => {
-                        properties.forEach(p => { if (p.group === group.id) p.group = null; });
-                        groups.splice(idx, 1);
-                        this.render();
-                    })
-                )
-            );
-        }
-
-        section.addSetting(s => s
-            .addButton(b => b.setButtonText("Add group").onClick(() => {
-                new PropertyGroupModal(this.app, { id: '', title: '' },
-                    groups.map(g => g.id),
-                    added => { groups.push(added); this.render(); }
-                ).open();
-            }))
-        );
-    }
-
-    private renderPropertiesList(contentEl: HTMLElement, groups: PropertyGroup[], properties: PropertyEntry[]): void {
-        const section = new SettingGroup(contentEl).setHeading("Properties");
-
-        for (let i = 0; i < properties.length; i++) {
-            const idx = i;
-            const entry = properties[idx];
-            const groupTitle = entry.group
-                ? (groups.find(g => g.id === entry.group)?.title ?? entry.group)
-                : null;
-            const enumLabel = entry.enum
-                ? (this.staticEnums.find(e => e.id === entry.enum!.id)?.name ?? entry.enum.id)
-                : null;
-            const badges = [groupTitle, enumLabel].filter(Boolean).join(", ");
-
-            section.addSetting(s => s
-                .setName(entry.property || "(unnamed)")
-                .setDesc(badges || " ")
-                .addExtraButton(b => b.setIcon("pencil").setTooltip("Edit")
-                    .onClick(() => {
-                        new PropertyEntryModal(this.app, entry, groups, this.staticEnums,
-                            updated => { properties[idx] = updated; this.render(); }
-                        ).open();
-                    })
-                )
-                .addExtraButton(b => b.setIcon("arrow-up").setTooltip("Move up").setDisabled(idx === 0)
-                    .onClick(() => {
-                        [properties[idx - 1], properties[idx]] = [properties[idx], properties[idx - 1]];
-                        this.render();
-                    })
-                )
-                .addExtraButton(b => b.setIcon("arrow-down").setTooltip("Move down").setDisabled(idx === properties.length - 1)
-                    .then(b => b.extraSettingsEl.style.marginInlineEnd = "24px")
-                    .onClick(() => {
-                        [properties[idx + 1], properties[idx]] = [properties[idx], properties[idx + 1]];
-                        this.render();
-                    })
-                )
-                .addExtraButton(b => b.setIcon("trash").setTooltip("Delete")
-                    .onClick(() => {
-                        new ConfirmModal(this.app,
-                            sanitizeHTMLToDom(`Delete property entry for <code>${entry.property || "(unnamed)"}</code>?`),
-                            () => { properties.splice(idx, 1); this.render(); },
-                            2
-                        ).open();
-                    })
-                )
-            );
-        }
-
-        section.addSetting(s => s
-            .addButton(b => b.setButtonText("Add property").onClick(() => {
-                new PropertyEntryModal(this.app,
-                    { property: '', group: null, enum: null, help: null },
-                    groups, this.staticEnums,
-                    added => { properties.push(added); this.render(); }
-                ).open();
-            }))
-        );
     }
 }
 
@@ -1235,8 +921,9 @@ export class StrangePropertiesSettingTab extends PluginSettingTab {
             const name = cond
                 ? `<code>${cond.property}</code> ${cond.operator} <code>${cond.value}</code>`
                 : "All notes";
-            const propertyCount = rule.properties.length;
-            const desc= `${propertyCount} propert${propertyCount === 1 ? 'y' : 'ies'}`;
+            const gc = rule.groups.length;
+            const pc = rule.properties.length;
+            const desc = `${gc} group${gc !== 1 ? 's' : ''} and ${pc} propert${pc !== 1 ? 'ies' : 'y'}`;
             group.addSetting(s => s
                 .setName(sanitizeHTMLToDom(name))
                 .setDesc(sanitizeHTMLToDom(desc))
@@ -1288,10 +975,11 @@ export class StrangePropertiesSettingTab extends PluginSettingTab {
     }
 
     private renderDefaultRule(group: SettingGroup): void {
-        const n = this.plugin.settings.defaultRule.properties.length;
+        const gc = this.plugin.settings.defaultRule.groups.length;
+        const pc = this.plugin.settings.defaultRule.properties.length;
         group.addSetting(s => s
             .setName("Default global rule")
-            .setDesc(`${n} propert${n === 1 ? 'y' : 'ies'}`)
+            .setDesc(`${gc} group${gc !== 1 ? 's' : ''} and ${pc} propert${pc !== 1 ? 'ies' : 'y'}`)
             .addButton(b => b
                 .setIcon("pencil")
                 .setButtonText("Edit rule")
@@ -1306,88 +994,6 @@ export class StrangePropertiesSettingTab extends PluginSettingTab {
             )
         );
     }
-
-    /* renderSectionHeaderRules — preserved for reference; superseded by renderPropertyRules
-    private renderSectionHeaderRules(sectionRules: SettingGroup): void {
-        const rules = this.plugin.settings.sectionHeaders;
-        for (let i = 0; i < rules.length; i++) {
-            const idx = i;
-            const rule = rules[idx];
-
-            const condition = (() => {
-                const c = rule.condition;
-                if (!c) return null;
-                const property = `<code>${c.property}</code>`;
-                const value = `<code>${c.value}</code>`;
-                switch (c.operator) {
-                    case "exists":
-                        return `${property} exists`;
-                    case "contains":
-                        return `${property} contains ${value}`;
-                    case "starts-with":
-                        return `${property} starts with ${value}`;
-                    default:
-                        return `${property} is ${value}`;
-                }
-            })();
-            const name = condition ? condition : "All property lists";
-
-            const n = rule.sections.length;
-            const desc = `Defines ${n} section${n !== 1 ? "s" : ""}`;
-
-            sectionRules.addSetting((setting) => setting
-                .setName(sanitizeHTMLToDom(name))
-                .setDesc(desc)
-                .addExtraButton(b => b
-                    .setIcon("pencil").setTooltip("Edit rule")
-                    .onClick(() => {
-                        new SectionHeaderRuleModal(this.app, rule, async updated => {
-                            rules[idx] = updated;
-                            await this.plugin.saveSettings();
-                            this.display();
-                        }).open();
-                    })
-                )
-                .addExtraButton(b => b
-                    .setIcon("arrow-up").setTooltip("Move up").setDisabled(idx === 0)
-                    .onClick(async () => {
-                        [rules[idx - 1], rules[idx]] = [rules[idx], rules[idx - 1]];
-                        await this.plugin.saveSettings();
-                        this.display();
-                    })
-                )
-                .addExtraButton(b => b
-                    .setIcon("arrow-down").setTooltip("Move down")
-                    .setDisabled(idx === rules.length - 1)
-                    .then(b => b.extraSettingsEl.style.marginInlineEnd = "24px")
-                    .onClick(async () => {
-                        [rules[idx + 1], rules[idx]] = [rules[idx], rules[idx + 1]];
-                        await this.plugin.saveSettings();
-                        this.display();
-                    })
-                )
-                .addExtraButton(b => b
-                    .setIcon("trash").setTooltip("Delete rule")
-                    .then(b => b.extraSettingsEl.style.marginInlineEnd = "24px")
-                    .onClick(async () => {
-                        new ConfirmModal(this.app, sanitizeHTMLToDom(`...`), async () => {
-                            rules.splice(idx, 1);
-                            await this.plugin.saveSettings();
-                            this.display();
-                        }).open();
-                    })
-                )
-                .addToggle(t => t
-                    .setValue(rule.enabled)
-                    .onChange(async v => {
-                        rule.enabled = v;
-                        await this.plugin.saveSettings();
-                    })
-                )
-            );
-        }
-    }
-    */
 
     private addBanner(containerEl: HTMLElement) {
         const url = "https://github.com/somethingSTRANGE/strange-properties"; // this.plugin.manifest.authorUrl;
