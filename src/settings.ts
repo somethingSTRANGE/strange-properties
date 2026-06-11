@@ -380,13 +380,13 @@ class EditPropertyModal extends Modal {
 // ─── Property groups modal ───────────────────────────────────────────────────
 
 class EditGroupsModal extends Modal {
-    private readonly groups: PropertyGroup[];
+    private readonly entries: PropertyGroup[];
     private readonly properties: PropertyEntry[];
     private readonly onUpdate: () => void;
 
     constructor(app: App, groups: PropertyGroup[], properties: PropertyEntry[], onUpdate: () => void) {
         super(app);
-        this.groups = groups;
+        this.entries = groups;
         this.properties = properties;
         this.onUpdate = onUpdate;
     }
@@ -401,8 +401,9 @@ class EditGroupsModal extends Modal {
         this.onUpdate();
     }
 
-    private render(): void {
+    private render(scrollTo?: number): void {
         const { contentEl } = this;
+        const scroll = scrollTo ?? contentEl.querySelector<HTMLElement>('.setting-items')?.scrollTop ?? 0;
         contentEl.classList.add("sp-settings-modal-level-2");
         contentEl.empty();
 
@@ -411,19 +412,19 @@ class EditGroupsModal extends Modal {
 
         reorderableList.listEl.classList.add("sp-scroll-shadows");
 
-        if (this.groups.length === 0) {
+        if (this.entries.length === 0) {
             reorderableList.addSetting(s => s.setName("No groups defined.")
                 .then(b => { b.settingEl.addClass("sp-empty-list"); })
             );
         } else {
-            for (const entry of this.groups) {
+            for (const entry of this.entries) {
                 let handleEl: HTMLElement;
                 const openEdit = () => {
-                    const idx = this.groups.indexOf(entry);
+                    const idx = this.entries.indexOf(entry);
                     new EditGroupModal(this.app, entry,
-                        this.groups.filter(g => g !== entry).map(g => g.id),
+                        this.entries.filter(g => g !== entry).map(g => g.id),
                         updated => {
-                            this.groups[idx] = updated;
+                            this.entries[idx] = updated;
                             this.render();
                         }
                     ).open();
@@ -434,9 +435,7 @@ class EditGroupsModal extends Modal {
                     .setClass("sp-row-clickable")
                     .setClass("sp-reorderable-list-item")
                     .addExtraButton(b => {
-                        b
-                            .setIcon("grip-vertical")
-                            .setTooltip("Drag to reorder");
+                        b.setIcon("grip-vertical").setTooltip("Drag to reorder");
                         b.extraSettingsEl.addClass("sp-drag-handle");
                         b.extraSettingsEl.addEventListener("click", e => e.stopPropagation());
                         handleEl = b.extraSettingsEl;
@@ -452,9 +451,9 @@ class EditGroupsModal extends Modal {
                             new ConfirmModal(this.app,
                                 sanitizeHTMLToDom(`Delete group entry for <code>${entry.title || "(unnamed)"}</code>?`),
                                 () => {
-                                    const idx = this.groups.indexOf(entry);
+                                    const idx = this.entries.indexOf(entry);
                                     this.properties.forEach(p => { if (p.group === entry.id) p.group = null; });
-                                    this.groups.splice(idx, 1);
+                                    this.entries.splice(idx, 1);
                                     this.render();
                                 },
                                 3
@@ -482,12 +481,14 @@ class EditGroupsModal extends Modal {
                 ghostClass: "sp-sortable-ghost",
                 onEnd: ({ oldIndex, newIndex }) => {
                     if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return;
-                    const [moved] = this.groups.splice(oldIndex, 1);
-                    this.groups.splice(newIndex, 0, moved);
+                    const [moved] = this.entries.splice(oldIndex, 1);
+                    this.entries.splice(newIndex, 0, moved);
                     this.render();
                 },
             });
         }
+
+        reorderableList.listEl.scrollTop = scroll;
 
         const footer = new Setting(contentEl)
             .then(s => {
@@ -503,16 +504,14 @@ class EditGroupsModal extends Modal {
             .then(b => footer.settingEl.prepend(b.buttonEl))
             .onClick(() => {
                 new EditGroupModal(this.app, { id: '', title: '' },
-                    this.groups.map(g => g.id),
+                    this.entries.map(g => g.id),
                     added => {
-                        this.groups.push(added);
-                        this.render();
+                        this.entries.push(added);
+                        this.render(Number.MAX_SAFE_INTEGER);
                     }
                 ).open();
             })
-        )
-
-
+        );
     }
 }
 
@@ -520,14 +519,14 @@ class EditGroupsModal extends Modal {
 
 class EditPropertiesModal extends Modal {
     private readonly groups: PropertyGroup[];
-    private readonly properties: PropertyEntry[];
+    private readonly entries: PropertyEntry[];
     private readonly staticEnums: StaticEnum[];
     private readonly onUpdate: () => void;
 
     constructor(app: App, groups: PropertyGroup[], properties: PropertyEntry[], staticEnums: StaticEnum[], onUpdate: () => void) {
         super(app);
         this.groups = groups;
-        this.properties = properties;
+        this.entries = properties;
         this.staticEnums = staticEnums;
         this.onUpdate = onUpdate;
     }
@@ -542,22 +541,23 @@ class EditPropertiesModal extends Modal {
         this.onUpdate();
     }
 
-    private render(): void {
+    private render(scrollTo?: number): void {
         const { contentEl } = this;
+        const scroll = scrollTo ?? contentEl.querySelector<HTMLElement>('.setting-items')?.scrollTop ?? 0;
         contentEl.classList.add("sp-settings-modal-level-2");
         contentEl.empty();
 
         const reorderableList = new SettingGroup(contentEl)
-            .addClass("sp-reorderable-list")
+            .addClass("sp-reorderable-list");
 
         reorderableList.listEl.classList.add("sp-scroll-shadows");
 
-        if (this.properties.length === 0) {
+        if (this.entries.length === 0) {
             reorderableList.addSetting(s => s.setName("No properties defined.")
                 .then(b => { b.settingEl.addClass("sp-empty-list"); })
             );
         } else {
-            for (const entry of this.properties) {
+            for (const entry of this.entries) {
                 const groupTitle = entry.group
                     ? (this.groups.find(g => g.id === entry.group)?.title ?? entry.group)
                     : null;
@@ -568,10 +568,10 @@ class EditPropertiesModal extends Modal {
 
                 let handleEl: HTMLElement;
                 const openEdit = () => {
-                    const idx = this.properties.indexOf(entry);
+                    const idx = this.entries.indexOf(entry);
                     new EditPropertyModal(this.app, entry, this.groups, this.staticEnums,
                         updated => {
-                            this.properties[idx] = updated;
+                            this.entries[idx] = updated;
                             this.render();
                         }
                     ).open();
@@ -592,14 +592,14 @@ class EditPropertiesModal extends Modal {
                         .setTooltip("Delete")
                         .then(b => {
                             b.extraSettingsEl.addClass("sp-delete-button");
-                            b.extraSettingsEl.addEventListener("click", e => e.stopPropagation())
+                            b.extraSettingsEl.addEventListener("click", e => e.stopPropagation());
                         })
                         .onClick(() => {
                             new ConfirmModal(this.app,
                                 sanitizeHTMLToDom(`Delete property entry for <code>${entry.property || "(unnamed)"}</code>?`),
                                 () => {
-                                    const idx = this.properties.indexOf(entry);
-                                    this.properties.splice(idx, 1);
+                                    const idx = this.entries.indexOf(entry);
+                                    this.entries.splice(idx, 1);
                                     this.render();
                                 },
                                 3
@@ -627,12 +627,14 @@ class EditPropertiesModal extends Modal {
                 ghostClass: "sp-sortable-ghost",
                 onEnd: ({ oldIndex, newIndex }) => {
                     if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return;
-                    const [moved] = this.properties.splice(oldIndex, 1);
-                    this.properties.splice(newIndex, 0, moved);
+                    const [moved] = this.entries.splice(oldIndex, 1);
+                    this.entries.splice(newIndex, 0, moved);
                     this.render();
                 },
             });
         }
+
+        reorderableList.listEl.scrollTop = scroll;
 
         const footer = new Setting(contentEl)
             .then(s => {
@@ -641,7 +643,6 @@ class EditPropertiesModal extends Modal {
             })
             .addButton(b => b.setButtonText("Done").setCta().onClick(() => this.close()));
 
-        // Move the Add button to the left side of the footer
         footer.addButton(b => b
             .setIcon("plus")
             .setClass("sp-list-add-button")
@@ -652,8 +653,8 @@ class EditPropertiesModal extends Modal {
                     { property: '', group: null, enum: null, help: null },
                     this.groups, this.staticEnums,
                     added => {
-                        this.properties.push(added);
-                        this.render();
+                        this.entries.push(added);
+                        this.render(Number.MAX_SAFE_INTEGER);
                     }
                 ).open();
             })
