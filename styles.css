@@ -341,11 +341,15 @@
       border-bottom-right-radius: 0;
     }
   }
+}
 
-  /* Footer row containing "Add property" and the hide-empty toggle */
+/* Footer row containing "Add property" and the hide-empty toggle */
+.setting-item.sp-modal-footer .sp-list-add-button svg {
+  position: relative;
+  left: -4px;
+}
 
-  .sp-property-footer {
-    display: flex;
-    justify-content: space-between;
-  }
+.sp-property-footer {
+  display: flex;
+  justify-content: space-between;
 }

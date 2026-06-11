@@ -489,25 +489,30 @@ class EditGroupsModal extends Modal {
             });
         }
 
-        new Setting(contentEl)
+        const footer = new Setting(contentEl)
             .then(s => {
                 s.settingEl.style.borderTop = "0";
-                s.settingEl.addClass("sp-list-footer");
+                s.settingEl.addClass("sp-modal-footer");
             })
-            .addButton(b => b
-                .setIcon("plus")
-                .then(b => b.buttonEl.createSpan({ text: "Add group" }))
-                .onClick(() => {
-                    new EditGroupModal(this.app, { id: '', title: '' },
-                        this.groups.map(g => g.id),
-                        added => {
-                            this.groups.push(added);
-                            this.render();
-                        }
-                    ).open();
-                })
-            )
             .addButton(b => b.setButtonText("Done").setCta().onClick(() => this.close()));
+
+        footer.addButton(b => b
+            .setIcon("plus")
+            .setClass("sp-list-add-button")
+            .then(b => b.buttonEl.createSpan({ text: "Add group" }))
+            .then(b => footer.settingEl.prepend(b.buttonEl))
+            .onClick(() => {
+                new EditGroupModal(this.app, { id: '', title: '' },
+                    this.groups.map(g => g.id),
+                    added => {
+                        this.groups.push(added);
+                        this.render();
+                    }
+                ).open();
+            })
+        )
+
+
     }
 }
 
@@ -632,13 +637,14 @@ class EditPropertiesModal extends Modal {
         const footer = new Setting(contentEl)
             .then(s => {
                 s.settingEl.style.borderTop = "0";
-                s.settingEl.addClass("sp-list-footer");
+                s.settingEl.addClass("sp-modal-footer");
             })
             .addButton(b => b.setButtonText("Done").setCta().onClick(() => this.close()));
 
         // Move the Add button to the left side of the footer
         footer.addButton(b => b
             .setIcon("plus")
+            .setClass("sp-list-add-button")
             .then(b => b.buttonEl.createSpan({ text: "Add property" }))
             .then(b => footer.settingEl.prepend(b.buttonEl))
             .onClick(() => {
@@ -652,8 +658,6 @@ class EditPropertiesModal extends Modal {
                 ).open();
             })
         );
-
-
     }
 }
 
