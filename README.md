@@ -1,6 +1,6 @@
 # Strange Properties
 
-Strange Properties upgrades Obsidian's property panel with dropdown value pickers, section grouping, contextual help text, empty-property filtering, and CSS value targeting — built for notes with many structured properties.
+Strange Properties expands Obsidian's property panel with curated dropdown value pickers, property grouping, contextual help text, empty-property filtering, and CSS targeting based on property values. It's designed for vaults that rely heavily on structured metadata and notes with large numbers of properties.
 
 ## Features
 
@@ -16,39 +16,55 @@ Strange Properties upgrades Obsidian's property panel with dropdown value picker
 
 ### Hide Empty Properties
 
-Some notes, especially those based on templates, might contain many unused properties. When this feature is enabled, a simple toggle is added to the bottom of the properties section that allows empty or value-less properties to be hidden.
+Template-based notes often contain dozens of properties that may never receive a value. When enabled, this feature adds a toggle to the bottom of the properties section that hides empty or valueless properties, allowing you to focus only on information that is actually in use.
 
-The toggle is global and affects the File Properties sidebar and all notes.
+The toggle is global and affects both the File Properties sidebar and note properties throughout the vault.
 
-When a new file property is added to a note, it's valueless by default and would disappear immediately while empty properties are hidden. Show all properties before adding a new one.
+Because newly created properties begin without a value, they will immediately disappear while empty properties are hidden. Temporarily show all properties before adding a new one.
 
 ### Property-Derived Note Classes
 
-Define rules that inject custom CSS classes onto the note view based on property values. A `type` property set to `character` can inject a `sp-type-character` class or a `draft` property, regardless of value, can inject a `sp-draft` class  — giving CSS snippets and themes a precise, conflict-free handle for scoping styles to specific note types.
+Define rules that inject custom CSS classes onto the note view based on property presence or property values.
+
+For example, a `type` property set to `character` can inject an `sp-type-character` class, while a `draft` property can inject an `sp-draft` class regardless of its value.
+
+These generated classes give themes, CSS snippets, and other customizations a precise, conflict-free way to target specific categories of notes without relying on file paths, tags, or manual class assignments.
 
 ### Property Value Attributes
 
-Obsidian identifies each property row with an attribute containing the property's name, but provides no equivalent for its value. This feature adds a value attribute to every property row — enabling CSS snippets and themes to style rows based on both their name and their current value. For example, a `status` property could be highlighted only when set to `overdue`.
+Obsidian identifies each property row using an attribute that contains the property's name, but it provides no equivalent identifier for the property's value.
+
+This feature adds a value attribute to every property row, allowing CSS snippets and themes to react to both the property's name and its current value.
+
+For example, a `status` property could be styled normally in most cases, but highlighted only when its value is `overdue`.
 
 ### Property Enhancements
 
-Properties can be enhanced in a few ways, and those enhancements may be applied globally or isolated to specific notes based on whether the note has a specific property and what its value might be.
+Properties can be enhanced in several ways. Enhancements may be applied globally across all notes or scoped to specific note types based on property presence and property values.
 
-You can isolate enhancements to notes that have a specific property defined, such as `type`. You can further isolate enhancements based on the value of that property, such as `type: character`. Any property not enhanced by an isolation rule can be enhanced globally.
+For example, you might apply enhancements only to notes that contain a `type` property, or further restrict them to notes where `type: character`.
+
+Any property not matched by an isolation rule may still be enhanced globally.
 
 #### Property Dropdowns with Value Options
 
-Text and Number properties may be assigned a pre-set list of value options that become accessible through a dropdown button added to the right side of the input field. Selecting an item from the menu will populate the field with a specific value, decreasing the chance of entering the wrong data.
+Text and Number properties can be assigned a predefined set of allowed values. A dropdown button is added beside the property field, allowing users to select from those values directly.
 
-The pre-set lists can be defined in settings and even generated dynamically based on existing notes in the vault.
+Unlike Obsidian's autocomplete, these options are explicitly configured and can be tailored to the property's intended purpose. This makes available values immediately visible, encourages consistency, and reduces accidental variations caused by manual entry.
+
+Value lists can be defined manually in settings or generated dynamically from existing notes in the vault.
 
 #### Property Groups
 
-Properties can be assigned a group, and if that group has a title, a header may appear above the property in the File Properties sidebar and notes while in Preview and Read modes. Consecutive properties that share a group assignment will also share a header.
+Properties can be assigned to groups. When a group has a title, a header can be displayed above matching properties in the File Properties sidebar and within notes while in Reading and Preview modes.
+
+Consecutive properties assigned to the same group share a single header, making large collections of metadata easier to navigate and understand.
 
 #### Property Help Popups
 
-Properties may be assigned help text that might define the property's usage or provide examples. When help is assigned to a property an icon will appear to its right. Hovering over the icon will show a popup containing the help text.
+Properties can be assigned help text that explains their purpose, documents expected values, or provides examples.
+
+When help text exists, an icon appears beside the property. Hovering over the icon displays a popup containing the associated documentation.
 
 ---
 
