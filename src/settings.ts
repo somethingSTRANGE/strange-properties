@@ -1,4 +1,13 @@
-import { AbstractInputSuggest, App, Modal, PluginSettingTab, sanitizeHTMLToDom, Setting, SettingGroup } from "obsidian";
+import {
+    AbstractInputSuggest,
+    App,
+    Modal,
+    PluginSettingTab,
+    sanitizeHTMLToDom,
+    setIcon,
+    Setting,
+    SettingGroup
+} from "obsidian";
 import Sortable from "sortablejs";
 import type StrangePropertiesPlugin from "./main";
 
@@ -12,6 +21,11 @@ export interface PropertyClassRule {
 }
 
 // ─── Property rule ───────────────────────────────────────────────────────────
+
+export interface DescItem {
+    icon?: string | null;
+    text: string;
+}
 
 export interface PropertyGroup {
     id: string;
@@ -123,7 +137,7 @@ class ConfirmModal extends Modal {
     }
 
     onOpen(): void {
-        this.contentEl.classList.add(`sp-settings-modal-level-${this.level}`);
+        this.contentEl.classList.add("sp-settings", "sp-modal-Confirm", `sp-modal-depth-${this.level}`);
         this.setTitle("Confirm deletion");
         this.contentEl.createEl("p", { text: this.message });
         new Setting(this.contentEl)
@@ -141,7 +155,7 @@ class ConfirmModal extends Modal {
 
 // ─── Property class rule modal ────────────────────────────────────────────────
 
-class PropertyClassRuleModal extends Modal {
+class EditClassRuleModal extends Modal {
     private rule: PropertyClassRule;
     private readonly onSave: (rule: PropertyClassRule) => void;
 
@@ -158,7 +172,7 @@ class PropertyClassRuleModal extends Modal {
     onOpen(): void {
         this.setTitle("Edit class rule");
         const { contentEl } = this;
-        contentEl.classList.add("sp-settings-modal-level-1");
+        contentEl.classList.add("sp-settings", "sp-modal-EditClassRule", "sp-modal-depth-1");
 
         new SettingGroup(contentEl)
             .addSetting((setting) => setting
@@ -215,6 +229,28 @@ class PropertyClassRuleModal extends Modal {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+function descFrag(...parts: Array<{
+    icon?: string | null;
+    text: string | null;
+    tooltip?: string | null
+} | null | undefined>): DocumentFragment {
+    const frag = createFragment();
+    for (const part of parts) {
+        if (part == null) continue;
+        const item = frag.createDiv({ cls: 'sp-item-property' });
+        if (part.tooltip) {
+            item.setAttribute("aria-label", part.tooltip)
+        }
+        if (part.icon) {
+            setIcon(item, part.icon);
+        }
+        if (part.text) {
+            item.createSpan({ text: part.text });
+        }
+    }
+    return frag;
+}
+
 function slugifyGroupId(title: string, existingIds: string[]): string {
     const base = title.toLowerCase()
                      .replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '')
@@ -250,7 +286,7 @@ class EditGroupModal extends Modal {
 
     private render(): void {
         const { contentEl } = this;
-        contentEl.classList.add("sp-settings-modal-level-3");
+        contentEl.classList.add("sp-settings", "sp-modal-EditGroup", "sp-modal-depth-3");
         contentEl.empty();
 
         new SettingGroup(contentEl)
@@ -303,7 +339,7 @@ class EditPropertyModal extends Modal {
 
     private render(): void {
         const { contentEl } = this;
-        contentEl.classList.add("sp-settings-modal-level-3");
+        contentEl.classList.add("sp-settings", "sp-modal-EditProperty", "sp-modal-depth-3");
         contentEl.empty();
 
         const groupOptions: Record<string, string> = { '': '(no group)' };
@@ -386,7 +422,7 @@ function renderReorderableList<T>(
     opts: {
         emptyMessage: string;
         getItemName: (item: T) => string;
-        getItemDesc: (item: T) => string;
+        getItemDesc: (item: T) => string | DocumentFragment;
         getDeleteConfirm: (item: T) => DocumentFragment;
         onBeforeDelete?: (item: T) => void;
         openEditModal: (item: T, onSave: (updated: T) => void) => void;
@@ -518,11 +554,12 @@ class EditGroupsModal extends Modal {
     }
 
     private render(scrollTo?: number): void {
-        this.contentEl.classList.add("sp-settings-modal-level-2");
+        this.contentEl.classList.add("sp-settings", "sp-modal-EditGroups", "sp-modal-depth-2");
+
         renderReorderableList(this.contentEl, this.app, this.entries, {
             emptyMessage: "No groups defined.",
             getItemName: e => e.title || "(untitled)",
-            getItemDesc: e => e.id,
+            getItemDesc: e => descFrag({ icon: 'key', text: e.id, tooltip: "Identifier" }),
             getDeleteConfirm: e => sanitizeHTMLToDom(`Delete group entry for <code>${e.title || "(unnamed)"}</code>?`),
             onBeforeDelete: e => { this.properties.forEach(p => { if (p.group === e.id) p.group = null; }); },
             openEditModal: (e, onSave) => new EditGroupModal(this.app, e,
@@ -568,18 +605,27 @@ class EditPropertiesModal extends Modal {
     }
 
     private render(scrollTo?: number): void {
-        this.contentEl.classList.add("sp-settings-modal-level-2");
+        this.contentEl.classList.add("sp-settings", "sp-modal-EditProperties", "sp-modal-depth-2");
+
         renderReorderableList(this.contentEl, this.app, this.entries, {
             emptyMessage: "No properties defined.",
             getItemName: e => e.property || "(unnamed)",
             getItemDesc: e => {
-                const groupTitle = e.group
+                const eGroup = e.group
                     ? (this.groups.find(g => g.id === e.group)?.title ?? e.group)
                     : null;
-                const enumLabel = e.enum
+                const eEnum = e.enum
                     ? (this.staticEnums.find(s => s.id === e.enum!.id)?.name ?? e.enum.id)
                     : null;
-                return [groupTitle, enumLabel].filter(Boolean).join(", ") || " ";
+                const eEnumIcon = e.enum && (e.enum.storeAs === "text" ? 'text-align-start' : e.enum.storeAs === "number" ? 'binary' : 'square-chevron-down');
+                const eEnumTooltip = e.enum && (e.enum.storeAs === "text" ? 'Text Dropdown' : e.enum.storeAs === "number" ? 'Number Dropdown' : null);
+                const eHelp = e.help ? true : null;
+                if (!eGroup && !eEnum && !eHelp) return " ";
+                return descFrag(
+                    eGroup ? { icon: 'group', text: eGroup, tooltip: "Group" } : null,
+                    eEnum ? { icon: eEnumIcon, text: eEnum, tooltip: eEnumTooltip } : null,
+                    eHelp ? { icon: 'info', text: null, tooltip: "Has Usage Information" } : null,
+                );
             },
             getDeleteConfirm: e => sanitizeHTMLToDom(`Delete property entry for <code>${e.property || "(unnamed)"}</code>?`),
             openEditModal: (e, onSave) => new EditPropertyModal(this.app, e, this.groups, this.staticEnums, onSave).open(),
@@ -598,7 +644,7 @@ class EditPropertiesModal extends Modal {
 
 // ─── Property rule modal ──────────────────────────────────────────────────────
 
-class PropertyRuleModal extends Modal {
+class EditPropertyRuleModal extends Modal {
     private rule: PropertyRule;
     private conditionDraft: { property: string; operator: "exists" | "is" | "contains" | "starts-with"; value: string };
     private readonly staticEnums: StaticEnum[];
@@ -630,7 +676,7 @@ class PropertyRuleModal extends Modal {
 
     private render(): void {
         const { contentEl } = this;
-        contentEl.classList.add("sp-settings-modal-level-1");
+        contentEl.classList.add("sp-settings", "sp-modal-EditPropertyRule", "sp-modal-depth-1");
         contentEl.empty();
 
         new SettingGroup(contentEl)
@@ -745,7 +791,7 @@ class DefaultPropertyRuleModal extends Modal {
 
     private render(): void {
         const { contentEl } = this;
-        contentEl.classList.add("sp-settings-modal-level-1");
+        contentEl.classList.add("sp-settings", "sp-modal-EditDefaultPropertyRule", "sp-modal-depth-1");
         contentEl.empty();
 
         const ng = this.rule.groups.length;
@@ -788,6 +834,7 @@ export class StrangePropertiesSettingTab extends PluginSettingTab {
 
     display(): void {
         const { containerEl } = this;
+        containerEl.classList.add("sp-settings", "sp-modal-depth-0");
         containerEl.empty();
 
         this.addBanner(containerEl);
@@ -892,7 +939,7 @@ export class StrangePropertiesSettingTab extends PluginSettingTab {
                 .addExtraButton(bEdit => bEdit
                     .setIcon("pencil").setTooltip("Edit rule")
                     .onClick(() => {
-                        new PropertyClassRuleModal(this.app, rule, async updated => {
+                        new EditClassRuleModal(this.app, rule, async updated => {
                             const idx = rules.indexOf(rule);
                             rules[idx] = updated;
                             await this.plugin.saveSettings();
@@ -904,7 +951,7 @@ export class StrangePropertiesSettingTab extends PluginSettingTab {
                     .setIcon("trash").setTooltip("Delete rule")
                     .then(b => b.extraSettingsEl.style.marginInlineEnd = "24px")
                     .onClick(() => {
-                        new ConfirmModal(this.app, sanitizeHTMLToDom(`Are you sure you want to delete the following property class rule?<div class="sp-settings-delete-item"><div class="sp-setting-item-name">${name}</div><div class="setting-item-description">${desc}</div></div>`), async () => {
+                        new ConfirmModal(this.app, sanitizeHTMLToDom(`Are you sure you want to delete the following property class rule?<div class="setting-item sp-confirm-deletion-details"><div class="setting-item-name">${name}</div><div class="setting-item-description">${desc}</div></div>`), async () => {
                             const idx = rules.indexOf(rule);
                             rules.splice(idx, 1);
                             await this.plugin.saveSettings();
@@ -966,7 +1013,7 @@ export class StrangePropertiesSettingTab extends PluginSettingTab {
                         .setIcon("pencil").setTooltip("Edit rule")
                         .onClick(() => {
                             const idx = rules.indexOf(rule);
-                            new PropertyRuleModal(this.app, rule, this.plugin.settings.staticEnums, async updated => {
+                            new EditPropertyRuleModal(this.app, rule, this.plugin.settings.staticEnums, async updated => {
                                 rules[idx] = updated;
                                 await this.plugin.saveSettings();
                                 this.display();
@@ -977,7 +1024,7 @@ export class StrangePropertiesSettingTab extends PluginSettingTab {
                         .setIcon("trash").setTooltip("Delete rule")
                         .then(b => b.extraSettingsEl.style.marginInlineEnd = "24px")
                         .onClick(() => {
-                            new ConfirmModal(this.app, sanitizeHTMLToDom(`Are you sure you want to delete the following property rule?<div class="sp-settings-delete-item"><div class="sp-setting-item-name">${name}</div><div class="setting-item-description">${desc}</div></div>`), async () => {
+                            new ConfirmModal(this.app, sanitizeHTMLToDom(`Are you sure you want to delete the following property rule?<div class="setting-item sp-confirm-deletion-details"><div class="setting-item-name">${name}</div><div class="setting-item-description">${desc}</div></div>`), async () => {
                                 const idx = rules.indexOf(rule);
                                 rules.splice(idx, 1);
                                 await this.plugin.saveSettings();
@@ -1039,10 +1086,10 @@ export class StrangePropertiesSettingTab extends PluginSettingTab {
 
     private addBanner(containerEl: HTMLElement) {
         const url = "https://github.com/somethingSTRANGE/strange-properties"; // this.plugin.manifest.authorUrl;
-        const desc = `<div class="sp-settings-banner-meta">Version: ${this.plugin.manifest.version}</div>`
-                     + `<div class="sp-settings-banner-meta">By ${this.plugin.manifest.author}</div>`
-                     + `<div class="sp-settings-banner-meta">Repository: <a target="_blank" rel="noopener" href="${url}">${url}</a></div>`
-                     + `<div class="sp-settings-banner-desc">${this.plugin.manifest.description}</div>`;
+        const desc = `<div class="sp-banner-meta">Version: ${this.plugin.manifest.version}</div>`
+                     + `<div class="sp-banner-meta">By ${this.plugin.manifest.author}</div>`
+                     + `<div class="sp-banner-meta">Repository: <a target="_blank" rel="noopener" href="${url}">${url}</a></div>`
+                     + `<div class="sp-banner-desc">${this.plugin.manifest.description}</div>`;
 
         const rawFunding = this.plugin.fundingUrl;
 
@@ -1055,7 +1102,7 @@ export class StrangePropertiesSettingTab extends PluginSettingTab {
                     Object.entries(rawFunding).map(([label, url]) => ({ label, url }));
 
         const banner = new Setting(containerEl)
-            .setClass("sp-settings-banner")
+            .setClass("sp-banner")
             .setName(this.plugin.manifest.name)
             .setDesc(sanitizeHTMLToDom(desc));
 

@@ -177,7 +177,7 @@ export default class StrangePropertiesPlugin extends Plugin {
                 if (seen.has(group.id)) continue;
                 seen.add(group.id);
                 lines.push(
-                    `.metadata-container.sp-hide-empty .sp-sec-${group.id}:not(:has(~ .sp-sec-${group.id}-prop:not(.sp-empty))) { display: none; }`
+                    `.metadata-container.sp-hide-empty .sp-group-${group.id}:not(:has(~ .sp-group-${group.id}-prop:not(.sp-empty))) { display: none; }`
                 );
             }
         }
@@ -578,7 +578,7 @@ export default class StrangePropertiesPlugin extends Plugin {
             expectedHeaders.length === existingHeaders.length &&
             expectedHeaders.every((h, i) =>
                 existingHeaders[i].textContent === h.title &&
-                existingHeaders[i].classList.contains(`sp-sec-${h.id}`)
+                existingHeaders[i].classList.contains(`sp-group-${h.id}`)
             );
         if (alreadyCurrent) return;
 
@@ -593,7 +593,7 @@ export default class StrangePropertiesPlugin extends Plugin {
         )) {
             const grp = propertyToGroup.get(el.getAttribute("data-property-key")!) ?? null;
             if (grp) {
-                el.classList.add(`sp-sec-${grp.id}-prop`);
+                el.classList.add(`sp-group-${grp.id}-prop`);
                 if (grp.id !== lastId) {
                     propertiesEl.insertBefore(this.createSectionHeaderEl(grp.title, grp.id), el);
                 }
@@ -621,7 +621,7 @@ export default class StrangePropertiesPlugin extends Plugin {
     }
 
     private createSectionHeaderEl(title: string, groupId: string): HTMLElement {
-        const el = createEl("div", { cls: `sp-section-header sp-sec-${groupId}` });
+        const el = createEl("div", { cls: `sp-metadata-group sp-group-${groupId}` });
         el.setAttribute("data-sp-section", "");
         el.textContent = title;
         return el;
@@ -631,7 +631,7 @@ export default class StrangePropertiesPlugin extends Plugin {
         contentEl.querySelectorAll("[data-sp-section]").forEach((el) => el.remove());
         for (const el of contentEl.querySelectorAll<HTMLElement>(".metadata-property[data-property-key]")) {
             for (const cls of [...el.classList]) {
-                if (/^sp-sec-.+-prop$/.test(cls)) el.classList.remove(cls);
+                if (/^sp-group-.+-prop$/.test(cls)) el.classList.remove(cls);
             }
         }
     }
@@ -706,7 +706,7 @@ export default class StrangePropertiesPlugin extends Plugin {
         const addButton = contentEl.querySelector<HTMLElement>(".metadata-add-button");
         if (!addButton) return;
 
-        const wrapper = createEl("div", { cls: "sp-property-footer" });
+        const wrapper = createEl("div", { cls: "sp-metadata-footer" });
         wrapper.setAttribute("data-sp-hide-empty-wrapper", "");
 
         addButton.parentElement!.insertBefore(wrapper, addButton);
