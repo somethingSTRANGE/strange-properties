@@ -377,6 +377,122 @@ class EditPropertyModal extends Modal {
     }
 }
 
+// ─── Reorderable list renderer ───────────────────────────────────────────────
+
+function renderReorderableList<T>(
+    contentEl: HTMLElement,
+    app: App,
+    entries: T[],
+    opts: {
+        emptyMessage: string;
+        getItemName: (item: T) => string;
+        getItemDesc: (item: T) => string;
+        getDeleteConfirm: (item: T) => DocumentFragment;
+        onBeforeDelete?: (item: T) => void;
+        openEditModal: (item: T, onSave: (updated: T) => void) => void;
+        addLabel: string;
+        openAddModal: (onAdd: (added: T) => void) => void;
+        onDone: () => void;
+        rerender: (scrollTo?: number) => void;
+        scrollTo?: number;
+    }
+): void {
+    const scroll = opts.scrollTo ?? contentEl.querySelector<HTMLElement>('.setting-items')?.scrollTop ?? 0;
+    contentEl.empty();
+
+    const list = new SettingGroup(contentEl).addClass("sp-reorderable-list");
+    list.listEl.classList.add("sp-scroll-shadows");
+
+    if (entries.length === 0) {
+        list.addSetting(s => s.setName(opts.emptyMessage)
+            .then(s => { s.settingEl.addClass("sp-empty-list"); })
+        );
+    } else {
+        for (const entry of entries) {
+            let handleEl: HTMLElement;
+            const openEdit = () => {
+                const idx = entries.indexOf(entry);
+                opts.openEditModal(entry, updated => {
+                    entries[idx] = updated;
+                    opts.rerender();
+                });
+            };
+            list.addSetting(s => s
+                .setName(opts.getItemName(entry))
+                .setDesc(opts.getItemDesc(entry))
+                .setClass("sp-row-clickable")
+                .setClass("sp-reorderable-list-item")
+                .addExtraButton(b => {
+                    b.setIcon("grip-vertical").setTooltip("Drag to reorder");
+                    b.extraSettingsEl.addClass("sp-drag-handle");
+                    b.extraSettingsEl.addEventListener("click", e => e.stopPropagation());
+                    handleEl = b.extraSettingsEl;
+                })
+                .addExtraButton(b => b
+                    .setIcon("trash")
+                    .setTooltip("Delete")
+                    .then(b => {
+                        b.extraSettingsEl.addClass("sp-delete-button");
+                        b.extraSettingsEl.addEventListener("click", e => e.stopPropagation());
+                    })
+                    .onClick(() => {
+                        new ConfirmModal(app, opts.getDeleteConfirm(entry), () => {
+                            const idx = entries.indexOf(entry);
+                            opts.onBeforeDelete?.(entry);
+                            entries.splice(idx, 1);
+                            opts.rerender();
+                        }, 3).open();
+                    })
+                )
+                .addExtraButton(b => b
+                    .setIcon("chevron-right")
+                    .setTooltip("Edit")
+                    .then(b => { b.extraSettingsEl.addClass("sp-chevron-icon"); })
+                    .setDisabled(true)
+                )
+                .then(s => {
+                    s.settingEl.insertBefore(handleEl, s.settingEl.querySelector(".setting-item-info"));
+                    s.settingEl.addEventListener("click", openEdit);
+                })
+            );
+        }
+
+        Sortable.create(list.listEl, {
+            handle: ".sp-drag-handle",
+            animation: 150,
+            ghostClass: "sp-sortable-ghost",
+            onEnd: ({ oldIndex, newIndex }) => {
+                if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return;
+                const [moved] = entries.splice(oldIndex, 1);
+                entries.splice(newIndex, 0, moved);
+                opts.rerender();
+            },
+        });
+    }
+
+    list.listEl.scrollTop = scroll;
+
+    const footer = new Setting(contentEl)
+        .then(s => {
+            s.settingEl.style.borderTop = "0";
+            s.settingEl.addClass("sp-modal-footer");
+        })
+        .addButton(b => b.setButtonText("Done").setCta().onClick(opts.onDone));
+
+    footer.addButton(b => b
+        .setIcon("plus")
+        .setClass("sp-list-add-button")
+        .then(b => b.buttonEl.createSpan({ text: opts.addLabel }))
+        .then(b => footer.settingEl.prepend(b.buttonEl))
+        .onClick(() => {
+            opts.openAddModal(added => {
+                entries.push(added);
+                opts.rerender(Number.MAX_SAFE_INTEGER);
+            });
+        })
+    );
+}
+
 // ─── Property groups modal ───────────────────────────────────────────────────
 
 class EditGroupsModal extends Modal {
@@ -402,116 +518,26 @@ class EditGroupsModal extends Modal {
     }
 
     private render(scrollTo?: number): void {
-        const { contentEl } = this;
-        const scroll = scrollTo ?? contentEl.querySelector<HTMLElement>('.setting-items')?.scrollTop ?? 0;
-        contentEl.classList.add("sp-settings-modal-level-2");
-        contentEl.empty();
-
-        const reorderableList = new SettingGroup(contentEl)
-            .addClass("sp-reorderable-list");
-
-        reorderableList.listEl.classList.add("sp-scroll-shadows");
-
-        if (this.entries.length === 0) {
-            reorderableList.addSetting(s => s.setName("No groups defined.")
-                .then(b => { b.settingEl.addClass("sp-empty-list"); })
-            );
-        } else {
-            for (const entry of this.entries) {
-                let handleEl: HTMLElement;
-                const openEdit = () => {
-                    const idx = this.entries.indexOf(entry);
-                    new EditGroupModal(this.app, entry,
-                        this.entries.filter(g => g !== entry).map(g => g.id),
-                        updated => {
-                            this.entries[idx] = updated;
-                            this.render();
-                        }
-                    ).open();
-                };
-                reorderableList.addSetting(s => s
-                    .setName(entry.title || "(untitled)")
-                    .setDesc(entry.id)
-                    .setClass("sp-row-clickable")
-                    .setClass("sp-reorderable-list-item")
-                    .addExtraButton(b => {
-                        b.setIcon("grip-vertical").setTooltip("Drag to reorder");
-                        b.extraSettingsEl.addClass("sp-drag-handle");
-                        b.extraSettingsEl.addEventListener("click", e => e.stopPropagation());
-                        handleEl = b.extraSettingsEl;
-                    })
-                    .addExtraButton(b => b
-                        .setIcon("trash")
-                        .setTooltip("Delete")
-                        .then(b => {
-                            b.extraSettingsEl.addClass("sp-delete-button");
-                            b.extraSettingsEl.addEventListener("click", e => e.stopPropagation());
-                        })
-                        .onClick(() => {
-                            new ConfirmModal(this.app,
-                                sanitizeHTMLToDom(`Delete group entry for <code>${entry.title || "(unnamed)"}</code>?`),
-                                () => {
-                                    const idx = this.entries.indexOf(entry);
-                                    this.properties.forEach(p => { if (p.group === entry.id) p.group = null; });
-                                    this.entries.splice(idx, 1);
-                                    this.render();
-                                },
-                                3
-                            ).open();
-                        })
-                    )
-                    .addExtraButton(b => b
-                        .setIcon("chevron-right")
-                        .setTooltip("Edit")
-                        .then(b => {
-                            b.extraSettingsEl.addClass("sp-chevron-icon");
-                        })
-                        .setDisabled(true)
-                    )
-                    .then(s => {
-                        s.settingEl.insertBefore(handleEl, s.settingEl.querySelector(".setting-item-info"));
-                        s.settingEl.addEventListener("click", openEdit);
-                    })
-                );
-            }
-
-            Sortable.create(reorderableList.listEl, {
-                handle: ".sp-drag-handle",
-                animation: 150,
-                ghostClass: "sp-sortable-ghost",
-                onEnd: ({ oldIndex, newIndex }) => {
-                    if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return;
-                    const [moved] = this.entries.splice(oldIndex, 1);
-                    this.entries.splice(newIndex, 0, moved);
-                    this.render();
-                },
-            });
-        }
-
-        reorderableList.listEl.scrollTop = scroll;
-
-        const footer = new Setting(contentEl)
-            .then(s => {
-                s.settingEl.style.borderTop = "0";
-                s.settingEl.addClass("sp-modal-footer");
-            })
-            .addButton(b => b.setButtonText("Done").setCta().onClick(() => this.close()));
-
-        footer.addButton(b => b
-            .setIcon("plus")
-            .setClass("sp-list-add-button")
-            .then(b => b.buttonEl.createSpan({ text: "Add group" }))
-            .then(b => footer.settingEl.prepend(b.buttonEl))
-            .onClick(() => {
-                new EditGroupModal(this.app, { id: '', title: '' },
-                    this.entries.map(g => g.id),
-                    added => {
-                        this.entries.push(added);
-                        this.render(Number.MAX_SAFE_INTEGER);
-                    }
-                ).open();
-            })
-        );
+        this.contentEl.classList.add("sp-settings-modal-level-2");
+        renderReorderableList(this.contentEl, this.app, this.entries, {
+            emptyMessage: "No groups defined.",
+            getItemName: e => e.title || "(untitled)",
+            getItemDesc: e => e.id,
+            getDeleteConfirm: e => sanitizeHTMLToDom(`Delete group entry for <code>${e.title || "(unnamed)"}</code>?`),
+            onBeforeDelete: e => { this.properties.forEach(p => { if (p.group === e.id) p.group = null; }); },
+            openEditModal: (e, onSave) => new EditGroupModal(this.app, e,
+                this.entries.filter(g => g !== e).map(g => g.id),
+                onSave
+            ).open(),
+            addLabel: "Add group",
+            openAddModal: onAdd => new EditGroupModal(this.app, { id: '', title: '' },
+                this.entries.map(g => g.id),
+                onAdd
+            ).open(),
+            onDone: () => this.close(),
+            rerender: scrollTo => this.render(scrollTo),
+            scrollTo,
+        });
     }
 }
 
@@ -542,123 +568,31 @@ class EditPropertiesModal extends Modal {
     }
 
     private render(scrollTo?: number): void {
-        const { contentEl } = this;
-        const scroll = scrollTo ?? contentEl.querySelector<HTMLElement>('.setting-items')?.scrollTop ?? 0;
-        contentEl.classList.add("sp-settings-modal-level-2");
-        contentEl.empty();
-
-        const reorderableList = new SettingGroup(contentEl)
-            .addClass("sp-reorderable-list");
-
-        reorderableList.listEl.classList.add("sp-scroll-shadows");
-
-        if (this.entries.length === 0) {
-            reorderableList.addSetting(s => s.setName("No properties defined.")
-                .then(b => { b.settingEl.addClass("sp-empty-list"); })
-            );
-        } else {
-            for (const entry of this.entries) {
-                const groupTitle = entry.group
-                    ? (this.groups.find(g => g.id === entry.group)?.title ?? entry.group)
+        this.contentEl.classList.add("sp-settings-modal-level-2");
+        renderReorderableList(this.contentEl, this.app, this.entries, {
+            emptyMessage: "No properties defined.",
+            getItemName: e => e.property || "(unnamed)",
+            getItemDesc: e => {
+                const groupTitle = e.group
+                    ? (this.groups.find(g => g.id === e.group)?.title ?? e.group)
                     : null;
-                const enumLabel = entry.enum
-                    ? (this.staticEnums.find(e => e.id === entry.enum!.id)?.name ?? entry.enum.id)
+                const enumLabel = e.enum
+                    ? (this.staticEnums.find(s => s.id === e.enum!.id)?.name ?? e.enum.id)
                     : null;
-                const badges = [groupTitle, enumLabel].filter(Boolean).join(", ");
-
-                let handleEl: HTMLElement;
-                const openEdit = () => {
-                    const idx = this.entries.indexOf(entry);
-                    new EditPropertyModal(this.app, entry, this.groups, this.staticEnums,
-                        updated => {
-                            this.entries[idx] = updated;
-                            this.render();
-                        }
-                    ).open();
-                };
-                reorderableList.addSetting(s => s
-                    .setName(entry.property || "(unnamed)")
-                    .setDesc(badges || " ")
-                    .setClass("sp-row-clickable")
-                    .setClass("sp-reorderable-list-item")
-                    .addExtraButton(b => {
-                        b.setIcon("grip-vertical").setTooltip("Drag to reorder");
-                        b.extraSettingsEl.addClass("sp-drag-handle");
-                        b.extraSettingsEl.addEventListener("click", e => e.stopPropagation());
-                        handleEl = b.extraSettingsEl;
-                    })
-                    .addExtraButton(b => b
-                        .setIcon("trash")
-                        .setTooltip("Delete")
-                        .then(b => {
-                            b.extraSettingsEl.addClass("sp-delete-button");
-                            b.extraSettingsEl.addEventListener("click", e => e.stopPropagation());
-                        })
-                        .onClick(() => {
-                            new ConfirmModal(this.app,
-                                sanitizeHTMLToDom(`Delete property entry for <code>${entry.property || "(unnamed)"}</code>?`),
-                                () => {
-                                    const idx = this.entries.indexOf(entry);
-                                    this.entries.splice(idx, 1);
-                                    this.render();
-                                },
-                                3
-                            ).open();
-                        })
-                    )
-                    .addExtraButton(b => b
-                        .setIcon("chevron-right")
-                        .setTooltip("Edit")
-                        .then(b => {
-                            b.extraSettingsEl.addClass("sp-chevron-icon");
-                        })
-                        .setDisabled(true)
-                    )
-                    .then(s => {
-                        s.settingEl.insertBefore(handleEl, s.settingEl.querySelector(".setting-item-info"));
-                        s.settingEl.addEventListener("click", openEdit);
-                    })
-                );
-            }
-
-            Sortable.create(reorderableList.listEl, {
-                handle: ".sp-drag-handle",
-                animation: 150,
-                ghostClass: "sp-sortable-ghost",
-                onEnd: ({ oldIndex, newIndex }) => {
-                    if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return;
-                    const [moved] = this.entries.splice(oldIndex, 1);
-                    this.entries.splice(newIndex, 0, moved);
-                    this.render();
-                },
-            });
-        }
-
-        reorderableList.listEl.scrollTop = scroll;
-
-        const footer = new Setting(contentEl)
-            .then(s => {
-                s.settingEl.style.borderTop = "0";
-                s.settingEl.addClass("sp-modal-footer");
-            })
-            .addButton(b => b.setButtonText("Done").setCta().onClick(() => this.close()));
-
-        footer.addButton(b => b
-            .setIcon("plus")
-            .setClass("sp-list-add-button")
-            .then(b => b.buttonEl.createSpan({ text: "Add property" }))
-            .then(b => footer.settingEl.prepend(b.buttonEl))
-            .onClick(() => {
-                new EditPropertyModal(this.app,
-                    { property: '', group: null, enum: null, help: null },
-                    this.groups, this.staticEnums,
-                    added => {
-                        this.entries.push(added);
-                        this.render(Number.MAX_SAFE_INTEGER);
-                    }
-                ).open();
-            })
-        );
+                return [groupTitle, enumLabel].filter(Boolean).join(", ") || " ";
+            },
+            getDeleteConfirm: e => sanitizeHTMLToDom(`Delete property entry for <code>${e.property || "(unnamed)"}</code>?`),
+            openEditModal: (e, onSave) => new EditPropertyModal(this.app, e, this.groups, this.staticEnums, onSave).open(),
+            addLabel: "Add property",
+            openAddModal: onAdd => new EditPropertyModal(this.app,
+                { property: '', group: null, enum: null, help: null },
+                this.groups, this.staticEnums,
+                onAdd
+            ).open(),
+            onDone: () => this.close(),
+            rerender: scrollTo => this.render(scrollTo),
+            scrollTo,
+        });
     }
 }
 
