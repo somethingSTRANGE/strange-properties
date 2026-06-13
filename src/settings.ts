@@ -75,6 +75,8 @@ export interface StaticEnum {
 export interface StrangePropertiesSettings {
     hideEmptyEnabled: boolean;
     hideEmptyActive: boolean;
+    separatorEnabled: boolean;
+    separatorStyle: "solid" | "dashed" | "dotted" | "hidden" | "none";
     injectPropertyValues: boolean;
     propertyClasses: PropertyClassRule[];
     propertyRules: PropertyRule[];
@@ -85,6 +87,8 @@ export interface StrangePropertiesSettings {
 export const DEFAULT_SETTINGS: StrangePropertiesSettings = {
     hideEmptyEnabled: true,
     hideEmptyActive: false,
+    separatorEnabled: true,
+    separatorStyle: "solid",
     injectPropertyValues: true,
     propertyClasses: [],
     propertyRules: [],
@@ -844,8 +848,8 @@ export class StrangePropertiesSettingTab extends PluginSettingTab {
         new SettingGroup(containerEl)
             .setHeading("Empty properties")
             .addSetting((setting) => setting
-                .setName("Show button on property footer")
-                .setDesc("Add a toggle button that allows properties with no value to be hidden.")
+                .setName("Show hide empty button")
+                .setDesc("Add a button that hides properties with no value. Appears in the File Properties toolbar and in the notes property footer.")
                 .addToggle(t => t
                     .setValue(this.plugin.settings.hideEmptyEnabled)
                     .onChange(async v => {
@@ -867,6 +871,42 @@ export class StrangePropertiesSettingTab extends PluginSettingTab {
                 )
                 .then(s => s.settingEl
                     .toggleClass("sp-setting-disabled", !this.plugin.settings.hideEmptyEnabled)
+                )
+            );
+
+        new SettingGroup(containerEl)
+            .setHeading("File Properties separator")
+            .addSetting((setting) => setting
+                .setName("Enable separator controls")
+                .setDesc("Add a toolbar button to the File Properties panel for cycling the property row separator style.")
+                .addToggle(t => t
+                    .setValue(this.plugin.settings.separatorEnabled)
+                    .onChange(async v => {
+                        this.plugin.settings.separatorEnabled = v;
+                        await this.plugin.saveSettings();
+                        this.display();
+                    })
+                )
+            )
+            .addSetting((setting) => setting
+                .setName("Separator style")
+                .setDesc("Border style applied to the bottom edge of each property row.")
+                .addDropdown(d => d
+                    .addOptions({
+                        solid:  "Solid",
+                        dashed: "Dashed",
+                        dotted: "Dotted",
+                        hidden: "Hidden",
+                        none:   "None",
+                    })
+                    .setValue(this.plugin.settings.separatorStyle ?? "solid")
+                    .onChange(async v => {
+                        this.plugin.settings.separatorStyle = v as StrangePropertiesSettings["separatorStyle"];
+                        await this.plugin.saveSettings();
+                    })
+                )
+                .then(s => s.settingEl
+                    .toggleClass("sp-setting-disabled", !this.plugin.settings.separatorEnabled)
                 )
             );
 

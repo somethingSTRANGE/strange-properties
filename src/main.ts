@@ -20,30 +20,27 @@ interface ResolvedEnumEntry {
 }
 
 export default class StrangePropertiesPlugin extends Plugin {
-    settings: StrangePropertiesSettings;
-    fundingUrl: string | Record<string, string> | undefined;
-    private enumCache = new Map<string, ResolvedEnumEntry[]>();
-    private observers = new Map<WorkspaceLeaf, MutationObserver>();
-    private enumClickHandlers = new Map<HTMLElement, (e: MouseEvent) => void>();
-    private checkboxChangeHandlers = new Map<HTMLElement, (e: Event) => void>();
-    // Keyed by contentEl → property key → { value, time }. After a checkbox click,
-    // Obsidian calls synchronize() which rebuilds the element from the stale metadataCache.
-    // This map lets injectPropertyValues use the user's actual click value (not the stale
-    // DOM) for a grace period (~1500ms) until the cache catches up.
-    private recentCheckboxValues = new Map<HTMLElement, Map<string, { value: boolean; time: number }>>();
-    private enumSelect: HTMLSelectElement | null = null;
-    private enumPickerCleanup: (() => void) | null = null;
-    private sectionStyleEl: HTMLStyleElement | null = null;
-
-    // Timestamp logging for diagnosing the 16 input/data-attr transitions across both views.
-    // Set DEBUG = true temporarily; leave false in production.
     // Set DEBUG_CHECKBOX_ONLY = true to suppress non-checkbox IPV lines (reduces noise).
     private static readonly DEBUG = false;
     private static readonly DEBUG_CHECKBOX_ONLY = true;
-    private dbg(msg: string, ...args: unknown[]) {
-        if (StrangePropertiesPlugin.DEBUG)
-            console.log(`[SP ${(Date.now() % 100_000).toString().padStart(5, '0')}ms]`, msg, ...args);
-    }
+    private static readonly CHECKBOX_GRACE_MS = 2000;
+    settings: StrangePropertiesSettings;
+    fundingUrl: string | Record<string, string> | undefined;
+    private enumCache = new Map<string, ResolvedEnumEntry[]>();
+    // Keyed by contentEl → property key → { value, time }. After a checkbox click,
+    // Obsidian calls synchronize() which rebuilds the element from the stale metadataCache.
+    // This map lets injectPropertyValues use the user's actual click value (not the stale
+    private observers = new Map<WorkspaceLeaf, MutationObserver>();
+    private enumClickHandlers = new Map<HTMLElement, (e: MouseEvent) => void>();
+    private checkboxChangeHandlers = new Map<HTMLElement, (e: Event) => void>();
+    // DOM) for a grace period (~1500ms) until the cache catches up.
+    private recentCheckboxValues = new Map<HTMLElement, Map<string, { value: boolean; time: number }>>();
+
+    // Timestamp logging for diagnosing the 16 input/data-attr transitions across both views.
+    // Set DEBUG = true temporarily; leave false in production.
+    private enumSelect: HTMLSelectElement | null = null;
+    private enumPickerCleanup: (() => void) | null = null;
+    private sectionStyleEl: HTMLStyleElement | null = null;
 
     async onload() {
         console.log(`Strange Properties loaded — build ${__BUILD_TIME__}`);
@@ -115,6 +112,11 @@ export default class StrangePropertiesPlugin extends Plugin {
         this.updateAllLeaves();
     }
 
+    private dbg(msg: string, ...args: unknown[]) {
+        if (StrangePropertiesPlugin.DEBUG)
+            console.log(`[SP ${(Date.now() % 100_000).toString().padStart(5, '0')}ms]`, msg, ...args);
+    }
+
     private async loadFundingUrl() {
         try {
             const raw = await this.app.vault.adapter.read(
@@ -177,12 +179,14 @@ export default class StrangePropertiesPlugin extends Plugin {
                 if (seen.has(group.id)) continue;
                 seen.add(group.id);
                 lines.push(
-                    `.metadata-container.sp-hide-empty .sp-group-${group.id}:not(:has(~ .sp-group-${group.id}-prop:not(.sp-empty))) { display: none; }`
+                    `.metadata-container[data-hide-empty] .sp-group-${group.id}:not(:has(~ .sp-group-${group.id}-prop:not([data-empty]))) { display: none; }`
                 );
             }
         }
         return lines.join("\n");
     }
+
+    // ─── Leaf helpers ─────────────────────────────────────────────────────────
 
     private updateSectionStylesheet() {
         if (!this.sectionStyleEl) {
@@ -192,8 +196,6 @@ export default class StrangePropertiesPlugin extends Plugin {
         }
         this.sectionStyleEl.textContent = this.generateSectionStyles();
     }
-
-    // ─── Leaf helpers ─────────────────────────────────────────────────────────
 
     private getLeafType(leaf: WorkspaceLeaf): "notes" | "properties" | null {
         if (leaf.view instanceof MarkdownView) return "notes";
@@ -209,11 +211,11 @@ export default class StrangePropertiesPlugin extends Plugin {
         return null;
     }
 
+    // ─── Update loop ──────────────────────────────────────────────────────────
+
     private getContentEl(leaf: WorkspaceLeaf): HTMLElement | null {
         return (leaf.view as unknown as { contentEl?: HTMLElement }).contentEl ?? null;
     }
-
-    // ─── Update loop ──────────────────────────────────────────────────────────
 
     private applyLeafUpdates(
         contentEl: HTMLElement,
@@ -229,7 +231,8 @@ export default class StrangePropertiesPlugin extends Plugin {
         this.injectEnumDropdowns(contentEl, frontmatter);
         this.markEmptyProperties(contentEl, frontmatter);
         this.updateHideEmptyContainer(contentEl);
-        this.injectHideEmptyButton(contentEl);
+        this.updateSeparatorAttribute(contentEl);
+        if (leafType === "notes") this.injectHideEmptyButton(contentEl);
     }
 
     private updateLeaf(leaf: WorkspaceLeaf) {
@@ -245,10 +248,6 @@ export default class StrangePropertiesPlugin extends Plugin {
             return;
         }
 
-        // Read file and frontmatter inside the RAF so we always get the freshest
-        // metadataCache state at execution time, not at queue time. Obsidian may
-        // re-render the property panel before updating the cache (triggering our
-        // observer), so the cache can still be stale when updateLeaf is called.
         activeWindow.requestAnimationFrame(() => {
             const file = this.getFileForLeaf(leaf);
             if (!file) {
@@ -257,6 +256,14 @@ export default class StrangePropertiesPlugin extends Plugin {
             }
             const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
             this.applyLeafUpdates(contentEl, frontmatter, leafType);
+            if (leafType === "properties") {
+                if (this.settings.hideEmptyEnabled || this.settings.separatorEnabled) {
+                    this.ensureNavHeader(leaf);
+                    this.updateNavHeaderButtons(leaf);
+                } else {
+                    this.clearNavHeader(leaf);
+                }
+            }
         });
     }
 
@@ -264,13 +271,13 @@ export default class StrangePropertiesPlugin extends Plugin {
         this.app.workspace.iterateAllLeaves((leaf) => this.updateLeaf(leaf));
     }
 
+    // ─── MutationObserver (file-properties timing) ────────────────────────────
+
     private updateLeavesForFile(file: TFile) {
         this.app.workspace.iterateAllLeaves((leaf) => {
             if (this.getFileForLeaf(leaf)?.path === file.path) this.updateLeaf(leaf);
         });
     }
-
-    // ─── MutationObserver (file-properties timing) ────────────────────────────
 
     private setupObservers() {
         this.app.workspace.iterateAllLeaves((leaf) => {
@@ -351,6 +358,14 @@ export default class StrangePropertiesPlugin extends Plugin {
                     const frontmatter =
                         this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
                     this.applyLeafUpdates(observerContentEl, frontmatter, leafType);
+                    if (leafType === "properties") {
+                        if (this.settings.hideEmptyEnabled || this.settings.separatorEnabled) {
+                            this.ensureNavHeader(leaf);
+                            this.updateNavHeaderButtons(leaf);
+                        } else {
+                            this.clearNavHeader(leaf);
+                        }
+                    }
                 }
             });
             observer.observe(contentEl, { childList: true, subtree: true });
@@ -358,12 +373,12 @@ export default class StrangePropertiesPlugin extends Plugin {
         });
     }
 
+    // ─── Class injection ──────────────────────────────────────────────────────
+
     private teardownObservers() {
         for (const observer of this.observers.values()) observer.disconnect();
         this.observers.clear();
     }
-
-    // ─── Class injection ──────────────────────────────────────────────────────
 
     private resolveClasses(
         frontmatter: Record<string, unknown>,
@@ -414,6 +429,8 @@ export default class StrangePropertiesPlugin extends Plugin {
         }
     }
 
+    // ─── data-property-value injection ───────────────────────────────────────
+
     private clearClasses(el: HTMLElement) {
         const tracked = (el.getAttribute(CLASS_ATTR) ?? "")
             .split(" ")
@@ -423,10 +440,6 @@ export default class StrangePropertiesPlugin extends Plugin {
         }
         el.removeAttribute(CLASS_ATTR);
     }
-
-    // ─── data-property-value injection ───────────────────────────────────────
-
-    private static readonly CHECKBOX_GRACE_MS = 2000;
 
     private injectPropertyValues(
         contentEl: HTMLElement,
@@ -543,10 +556,19 @@ export default class StrangePropertiesPlugin extends Plugin {
         const propertyToGroup = new Map<string, { id: string; title: string }>();
         const claimedKeys = new Set<string>();
 
-        type RuleCandidate = { enabled: boolean; condition?: PropertyRule["condition"]; groups: PropertyGroup[]; properties: PropertyEntry[] };
+        type RuleCandidate = {
+            enabled: boolean;
+            condition?: PropertyRule["condition"];
+            groups: PropertyGroup[];
+            properties: PropertyEntry[]
+        };
         const rulesToCheck: RuleCandidate[] = [
             ...this.settings.propertyRules,
-            { enabled: true, groups: this.settings.defaultRule.groups, properties: this.settings.defaultRule.properties },
+            {
+                enabled: true,
+                groups: this.settings.defaultRule.groups,
+                properties: this.settings.defaultRule.properties
+            },
         ];
 
         for (const rule of rulesToCheck) {
@@ -577,8 +599,8 @@ export default class StrangePropertiesPlugin extends Plugin {
         const alreadyCurrent =
             expectedHeaders.length === existingHeaders.length &&
             expectedHeaders.every((h, i) =>
-                existingHeaders[i].textContent === h.title &&
-                existingHeaders[i].classList.contains(`sp-group-${h.id}`)
+            existingHeaders[i].textContent === h.title &&
+            existingHeaders[i].classList.contains(`sp-group-${h.id}`)
             );
         if (alreadyCurrent) return;
 
@@ -657,27 +679,23 @@ export default class StrangePropertiesPlugin extends Plugin {
         );
         for (const el of els) {
             const key = el.getAttribute("data-property-key")!;
-            el.classList.toggle("sp-empty", this.isEmptyValue(frontmatter[key]));
+            el.toggleAttribute("data-empty", this.isEmptyValue(frontmatter[key]));
         }
     }
 
     private clearEmptyMarks(contentEl: HTMLElement) {
         contentEl
-            .querySelectorAll<HTMLElement>(".metadata-property.sp-empty")
-            .forEach((el) => el.classList.remove("sp-empty"));
+            .querySelectorAll<HTMLElement>("[data-empty]")
+            .forEach((el) => el.removeAttribute("data-empty"));
     }
 
     private updateHideEmptyContainer(contentEl: HTMLElement) {
         const containerEl =
             contentEl.querySelector<HTMLElement>(".metadata-container") ?? contentEl;
         const shouldHide = this.settings.hideEmptyEnabled && this.settings.hideEmptyActive;
-        const wasHidden = containerEl.classList.contains("sp-hide-empty");
-        containerEl.classList.toggle("sp-hide-empty", shouldHide);
-        // Force a synchronous layout flush so Electron paints the change immediately.
+        const wasHidden = containerEl.hasAttribute("data-hide-empty");
+        containerEl.toggleAttribute("data-hide-empty", shouldHide);
         void containerEl.offsetWidth;
-        // On the visible→hidden transition, scroll the footer into view after the
-        // layout settles. This also triggers CodeMirror to recalculate scroll height,
-        // fixing the stale scrollbar position.
         if (shouldHide && !wasHidden) {
             activeWindow.requestAnimationFrame(() => {
                 contentEl
@@ -762,7 +780,113 @@ export default class StrangePropertiesPlugin extends Plugin {
         wrapper.remove();
     }
 
-    // ─── Enum dropdowns ──────────────────────────────────────────────────────
+    // ─── File Properties nav-header toolbar ──────────────────────────────────
+
+    private ensureNavHeader(leaf: WorkspaceLeaf): void {
+        /*
+         *  Expecting a nav-header toolbar with buttons and search input.
+         *  Obsidian has one at the top of most sidebar panels, but
+         *  File Properties may not have one.
+         * 
+         *      <div class="nav-header">
+         *          <div class="nav-buttons-container">
+         *              { new buttons go here }
+         *          </div>
+         *          <div class="search-input-container" style="display: none;">
+         *              <input enterkeyhint="search" type="search" spellcheck="false" placeholder="Search...">
+         *              <div class="search-input-clear-button" aria-label="Clear search">
+         *              </div>
+         *          </div>
+         *      </div>
+         * 
+         *   Create that structure if it doesn't already exist and mark
+         *   injected elements so they can be cleaned up by the plugin.
+         */
+        const containerEl = leaf.view.containerEl;
+
+        let header = containerEl.querySelector<HTMLElement>(".nav-header");
+        if (!header) {
+            header = createEl("div", { cls: "nav-header" });
+            header.setAttribute("data-sp-nav-header", "");
+            containerEl.prepend(header);
+        }
+
+        if (!header.querySelector(".nav-buttons-container")) {
+            const buttons = createEl("div", { cls: "nav-buttons-container" });
+            buttons.setAttribute("data-sp-nav-buttons", "");
+            header.prepend(buttons);
+        }
+
+    }
+
+    private updateNavHeaderButtons(leaf: WorkspaceLeaf): void {
+        const header = leaf.view.containerEl.querySelector<HTMLElement>(".nav-header");
+        if (!header) return;
+
+        const buttons = header.querySelector<HTMLElement>(".nav-buttons-container");
+        if (!buttons) return;
+
+        buttons.empty();
+
+        if (this.settings.hideEmptyEnabled) {
+            const hideBtn = buttons.createEl("div", { cls: "clickable-icon nav-action-button" });
+            const active = this.settings.hideEmptyActive;
+            setTooltip(hideBtn, active ? "Show empty properties" : "Hide empty properties");
+            hideBtn.setAttribute("data-sp-nav-hide-empty", "");
+            setIcon(hideBtn, active ? "eye-off" : "eye");
+            hideBtn.addEventListener("click", () => {
+                this.settings.hideEmptyActive = !this.settings.hideEmptyActive;
+                this.saveSettings();
+            });
+        }
+
+        if (this.settings.separatorEnabled) {
+            const CYCLE = ["solid", "dashed", "dotted", "hidden", "none"] as const;
+            const style = this.settings.separatorStyle ?? "solid";
+
+            const sepBtn = buttons.createEl("div", { cls: "clickable-icon nav-action-button" });
+            setTooltip(sepBtn, `Property separator: ${style}`);
+            sepBtn.setAttribute("data-sp-nav-separator", "");
+            setIcon(sepBtn, "line-style");
+            if (!sepBtn.querySelector("svg")) {
+                sepBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon" opacity=".4"><path d="M3 5h2"/><path d="M11 5h2"/><path d="M19 5h2"/><path d="M3 12h6"/><path d="M15 12h6"/><path d="M3 19h18"/></svg>`;
+            }
+            sepBtn.addEventListener("click", () => {
+                const idx = CYCLE.indexOf(this.settings.separatorStyle ?? "solid");
+                this.settings.separatorStyle = CYCLE[(idx + 1) % CYCLE.length];
+                this.saveSettings();
+            });
+        }
+    }
+
+    private clearNavHeader(leaf: WorkspaceLeaf): void {
+        const containerEl = leaf.view.containerEl;
+        const header = containerEl.querySelector<HTMLElement>(".nav-header");
+        if (!header) return;
+
+        if (header.hasAttribute("data-sp-nav-header")) {
+            // We own the entire header — remove it wholesale.
+            header.remove();
+            return;
+        }
+
+        // Native header — remove only elements we created.
+        header.querySelector("[data-sp-nav-buttons]")?.remove();
+
+        // If we used a native nav-buttons-container, remove our buttons from it.
+        header.querySelector<HTMLElement>(".nav-buttons-container")
+            ?.querySelectorAll("[data-sp-nav-hide-empty], [data-sp-nav-separator]")
+            .forEach(el => el.remove());
+
+    }
+
+    // ─── Separator attribute ──────────────────────────────────────────────────
+
+    private updateSeparatorAttribute(contentEl: HTMLElement): void {
+        const containerEl = contentEl.querySelector<HTMLElement>(".metadata-container") ?? contentEl;
+        const style = this.settings.separatorStyle ?? "solid";
+        containerEl.setAttribute("data-sp-separator", style);
+    }
 
     // ─── Enum dropdowns ──────────────────────────────────────────────────────
 
@@ -979,7 +1103,7 @@ export default class StrangePropertiesPlugin extends Plugin {
             // after any click and calls injectPropertyValues on all leaves. Without this,
             // the sister leaf reads a stale DOM value during that first RAF pass.
             const clickedLeaf = [...this.observers.keys()]
-                .find(l => this.getContentEl(l) === contentEl) ?? null;
+                                    .find(l => this.getContentEl(l) === contentEl) ?? null;
             const clickedFile = clickedLeaf ? this.getFileForLeaf(clickedLeaf) : null;
             const now = Date.now();
             for (const leaf of this.observers.keys()) {
@@ -987,7 +1111,10 @@ export default class StrangePropertiesPlugin extends Plugin {
                 const leafEl = this.getContentEl(leaf);
                 if (!leafEl) continue;
                 let m = this.recentCheckboxValues.get(leafEl);
-                if (!m) { m = new Map(); this.recentCheckboxValues.set(leafEl, m); }
+                if (!m) {
+                    m = new Map();
+                    this.recentCheckboxValues.set(leafEl, m);
+                }
                 m.set(key, { value, time: now });
             }
             const normalized = this.normalizePropertyValue(value);
@@ -1023,9 +1150,11 @@ export default class StrangePropertiesPlugin extends Plugin {
         this.clearCheckboxHandler(contentEl);
         this.clearEmptyMarks(contentEl);
         this.clearHideEmptyButton(contentEl);
+        this.clearNavHeader(leaf);
         const containerEl =
             contentEl.querySelector<HTMLElement>(".metadata-container") ?? contentEl;
-        containerEl.classList.remove("sp-hide-empty");
+        containerEl.removeAttribute("data-hide-empty");
+        containerEl.removeAttribute("data-sp-separator");
     }
 
     // ─── Value normalization ──────────────────────────────────────────────────

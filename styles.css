@@ -308,135 +308,207 @@
   }
 }
 
-.workspace-leaf-content {
-  /*
-   *  Depending on the property type, there are slight discrepancies between
-   *  metadata label and value heights.
-   */
-  &[data-type="file-properties"] {
-  }
-
-  &[data-type="markdown"] {
+.workspace .workspace-split {
+  .workspace-leaf-content {
     /*
-     *  Checkbox  key: h:_28px_ (input: h:28px fs:14px lh:normal), value: h:_28px_ mh:28px (input: h:16px fs:14px lh:normal) -- min-height: var(--input-height) or calc(16px * 1.75);
-     *  Date      
-     *  DateTime  
-     *  List      
-     *  Number    
-     *  Text      
-     */
-  }
-}
-
-.metadata-container {
-  /*
-   *  metadata-container
-   *    -> metadata-content
-   *      -> metadata-properties
-   *        -> metadata-property
-   *        -> sp-metadata-group
-   *      -> sp-metadata-footer
-   */
-
-  &.sp-hide-empty .metadata-property.sp-empty {
-    /* Hides empty property rows when the toggle is active */
-    display: none;
-  }
-
-  .sp-metadata-footer {
-    /* Footer row containing "Add property" and the hide-empty toggle */
-    display: flex;
-    justify-content: space-between;
-
-    .metadata-add-button.sp-add-disabled {
-      /* "Add property" button disabled while empty properties are hidden */
-      opacity: 0.35;
-      cursor: default;
-      pointer-events: none;
-    }
-  }
-
-  .sp-metadata-group {
-    /*  Group headers injected between property groups  */
-    margin-top: 1rem;
-    margin-left: 0.25rem;
-    border-bottom: 1px solid var(--metadata-divider-color);
-    font-size: calc(var(--font-text-size) - 2px);
-    font-weight: 600;
-    line-height: 1;
-  }
-
-  .metadata-property {
-    /*
-     *  File Properties panel:
-     *    Hide the bottom borders for all group properties.
+     *  Depending on the property type, there are slight discrepancies between
+     *  metadata label and value heights.
      */
 
-    &[class*="sp-group-"] {
-      .metadata-property-key,
-      .metadata-property-value {
-        _border-bottom-color: transparent;
-      }
-    }
-
-    .metadata-property-value {
-      .multi-select-container,
-      .metadata-input-longtext {
-        /* line-height: calc(20 / var(--metadata-input-font-size)); */
-      }
-    }
-
-    /*
-     * Enum dropdown styles
-     */
-
-    &[data-sp-enum] {
-      /*
-      &:hover .metadata-property-value::after {
-        border-left: 1px solid var(--background-modifier-border-focus);
-      }
-
-      &:focus-within .metadata-property-value::after {
-        border-left: 1px solid var(--background-modifier-border-focus);
-        padding-left: 4px;
-        background-color: var(--background-modifier-border-focus);
-      }
-      */
-
-      .metadata-property-value {
+    &[data-type="file-properties"] {
+      &:has(.metadata-container[data-sp-separator]) .nav-buttons-container > .clickable-icon[data-sp-nav-separator] {
         position: relative;
 
         &::after {
-          /* Chevron indicator — the right 28px is the dropdown trigger zone */
-          content: '⌄';
+          content: '';
           position: absolute;
-          top: 50%;
-          right: 0;
-          width: 14px;
-          height: 100%;
-          padding: 0 4px;
-          transform: translateY(-50%);
-          border-left: 1px solid transparent;
-          color: var(--text-muted);
-          font-size: 1.1em;
-          line-height: 1;
-          cursor: pointer;
-          pointer-events: none;
+          top: 4px;
+          left: 6px;
+          width: 18px;
+          height: 18px;
+          background-color: currentcolor;
+          filter: drop-shadow(0 -1px 2px #000);
         }
 
+        > svg {
+          /*  hide the default heart icon  */
+          visibility: hidden;
+        }
       }
 
-      .metadata-input-longtext,
-      .metadata-property-value input:not(.metadata-property-key-input) {
-        /* Pad native inputs so content doesn't overlap the chevron */
-        padding-right: 28px;
+      &:has(.metadata-container[data-sp-separator="solid"]) .nav-buttons-container > .clickable-icon[data-sp-nav-separator]::after {
+        mask: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0ibTMgMThjLTAuNTUyMjggMC0xIDAuNDQ3NzItMSAxczAuNDQ3NzIgMSAxIDFoMThjMC41NTIyOCAwIDEtMC40NDc3MiAxLTFzLTAuNDQ3NzItMS0xLTF6Ii8+PGcgb3BhY2l0eT0iLjQiPjxwYXRoIGQ9Im0zIDRjLTAuNTUyMjkgMS4zNWUtNSAtMSAwLjQ0Nzc1LTAuOTk5OTggMSAxLjM1ZS01IDAuNTUyMjcgMC40NDc3MSAwLjk5OTk2IDAuOTk5OTggMC45OTk5OGgyYzAuNTUyMjctMS4zNWUtNSAwLjk5OTk2LTAuNDQ3NzEgMC45OTk5OC0wLjk5OTk4IDIuN2UtNSAtMC41NTIyOS0wLjQ0NzY4LTEtMC45OTk5OC0xem04IDBjLTAuNTUyMzItMi42N2UtNSAtMS4wMDAxIDAuNDQ3NzMtMSAxIDEuMzVlLTUgMC41NTIyOSAwLjQ0Nzc1IDEgMSAwLjk5OTk4aDJjMC41NTIyOSAyLjY1ZS01IDEtMC40NDc2OCAxLTAuOTk5OTggMi43ZS01IC0wLjU1MjMyLTAuNDQ3NzItMS4wMDAxLTEtMXptOCAwYy0wLjU1MjI5IDEuMzNlLTUgLTEgMC40NDc3NS0wLjk5OTk4IDEgMS4zZS01IDAuNTUyMjcgMC40NDc3MSAwLjk5OTk2IDAuOTk5OTggMC45OTk5OGgyYzAuNTUyMjctMS4zM2UtNSAwLjk5OTk2LTAuNDQ3NzEgMC45OTk5OC0wLjk5OTk4IDIuN2UtNSAtMC41NTIyOS0wLjQ0NzY4LTEtMC45OTk5OC0xeiIvPjxwYXRoIGQ9Im0zIDExYy0wLjU1MjI3IDEuM2UtNSAtMC45OTk5NiAwLjQ0NzcxLTAuOTk5OTggMC45OTk5OCAxLjMzZS01IDAuNTUyMjcgMC40NDc3MSAwLjk5OTk2IDAuOTk5OTggMC45OTk5OGg2YzAuNTUyMjctMS4zZS01IDAuOTk5OTYtMC40NDc3MSAwLjk5OTk4LTAuOTk5OTgtMS4zM2UtNSAtMC41NTIyNy0wLjQ0NzcxLTAuOTk5OTYtMC45OTk5OC0wLjk5OTk4em0xMiAwYy0wLjU1MjI3IDEuM2UtNSAtMC45OTk5NiAwLjQ0NzcxLTAuOTk5OTggMC45OTk5OCAxLjNlLTUgMC41NTIyNyAwLjQ0NzcxIDAuOTk5OTYgMC45OTk5OCAwLjk5OTk4aDZjMC41NTIyNy0xLjNlLTUgMC45OTk5Ni0wLjQ0NzcxIDAuOTk5OTgtMC45OTk5OC0xLjNlLTUgLTAuNTUyMjctMC40NDc3MS0wLjk5OTk2LTAuOTk5OTgtMC45OTk5OHoiLz48L2c+PC9zdmc+');
+      }
+
+      &:has(.metadata-container[data-sp-separator="dashed"]) .nav-buttons-container > .clickable-icon[data-sp-nav-separator]::after {
+        mask: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0ibTMgMTFjLTAuNTUyMjcgMS4zZS01IC0wLjk5OTk2IDAuNDQ3NzEtMC45OTk5OCAwLjk5OTk4IDEuMzNlLTUgMC41NTIyNyAwLjQ0NzcxIDAuOTk5OTYgMC45OTk5OCAwLjk5OTk4aDZjMC41NTIyNy0xLjNlLTUgMC45OTk5Ni0wLjQ0NzcxIDAuOTk5OTgtMC45OTk5OC0xLjMzZS01IC0wLjU1MjI3LTAuNDQ3NzEtMC45OTk5Ni0wLjk5OTk4LTAuOTk5OTh6bTEyIDBjLTAuNTUyMjcgMS4zZS01IC0wLjk5OTk2IDAuNDQ3NzEtMC45OTk5OCAwLjk5OTk4IDEuM2UtNSAwLjU1MjI3IDAuNDQ3NzEgMC45OTk5NiAwLjk5OTk4IDAuOTk5OThoNmMwLjU1MjI3LTEuM2UtNSAwLjk5OTk2LTAuNDQ3NzEgMC45OTk5OC0wLjk5OTk4LTEuM2UtNSAtMC41NTIyNy0wLjQ0NzcxLTAuOTk5OTYtMC45OTk5OC0wLjk5OTk4eiIvPjxnIG9wYWNpdHk9Ii40Ij48cGF0aCBkPSJtMyA0Yy0wLjU1MjI5IDEuMzVlLTUgLTEgMC40NDc3NS0wLjk5OTk4IDEgMS4zNWUtNSAwLjU1MjI3IDAuNDQ3NzEgMC45OTk5NiAwLjk5OTk4IDAuOTk5OThoMmMwLjU1MjI3LTEuMzVlLTUgMC45OTk5Ni0wLjQ0NzcxIDAuOTk5OTgtMC45OTk5OCAyLjdlLTUgLTAuNTUyMjktMC40NDc2OC0xLTAuOTk5OTgtMXptOCAwYy0wLjU1MjMyLTIuNjdlLTUgLTEuMDAwMSAwLjQ0NzczLTEgMSAxLjM1ZS01IDAuNTUyMjkgMC40NDc3NSAxIDEgMC45OTk5OGgyYzAuNTUyMjkgMi42NWUtNSAxLTAuNDQ3NjggMS0wLjk5OTk4IDIuN2UtNSAtMC41NTIzMi0wLjQ0NzcyLTEuMDAwMS0xLTF6bTggMGMtMC41NTIyOSAxLjMzZS01IC0xIDAuNDQ3NzUtMC45OTk5OCAxIDEuM2UtNSAwLjU1MjI3IDAuNDQ3NzEgMC45OTk5NiAwLjk5OTk4IDAuOTk5OThoMmMwLjU1MjI3LTEuMzNlLTUgMC45OTk5Ni0wLjQ0NzcxIDAuOTk5OTgtMC45OTk5OCAyLjdlLTUgLTAuNTUyMjktMC40NDc2OC0xLTAuOTk5OTgtMXoiLz48cGF0aCBkPSJtMyAxOGMtMC41NTIyOCAwLTEgMC40NDc3Mi0xIDFzMC40NDc3MiAxIDEgMWgxOGMwLjU1MjI4IDAgMS0wLjQ0NzcyIDEtMXMtMC40NDc3Mi0xLTEtMXoiLz48L2c+PC9zdmc+');
+      }
+
+      &:has(.metadata-container[data-sp-separator="dotted"]) .nav-buttons-container > .clickable-icon[data-sp-nav-separator]::after {
+        mask: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0ibTMgNGMtMC41NTIyOSAxLjM1ZS01IC0xIDAuNDQ3NzUtMC45OTk5OCAxIDEuMzVlLTUgMC41NTIyNyAwLjQ0NzcxIDAuOTk5OTYgMC45OTk5OCAwLjk5OTk4aDJjMC41NTIyNy0xLjM1ZS01IDAuOTk5OTYtMC40NDc3MSAwLjk5OTk4LTAuOTk5OTggMi43ZS01IC0wLjU1MjI5LTAuNDQ3NjgtMS0wLjk5OTk4LTF6bTggMGMtMC41NTIzMi0yLjY3ZS01IC0xLjAwMDEgMC40NDc3My0xIDEgMS4zNWUtNSAwLjU1MjI5IDAuNDQ3NzUgMSAxIDAuOTk5OThoMmMwLjU1MjI5IDIuNjVlLTUgMS0wLjQ0NzY4IDEtMC45OTk5OCAyLjdlLTUgLTAuNTUyMzItMC40NDc3Mi0xLjAwMDEtMS0xem04IDBjLTAuNTUyMjkgMS4zM2UtNSAtMSAwLjQ0Nzc1LTAuOTk5OTggMSAxLjNlLTUgMC41NTIyNyAwLjQ0NzcxIDAuOTk5OTYgMC45OTk5OCAwLjk5OTk4aDJjMC41NTIyNy0xLjMzZS01IDAuOTk5OTYtMC40NDc3MSAwLjk5OTk4LTAuOTk5OTggMi43ZS01IC0wLjU1MjI5LTAuNDQ3NjgtMS0wLjk5OTk4LTF6Ii8+PGcgb3BhY2l0eT0iLjQiPjxwYXRoIGQ9Im0zIDExYy0wLjU1MjI3IDEuM2UtNSAtMC45OTk5NiAwLjQ0NzcxLTAuOTk5OTggMC45OTk5OCAxLjMzZS01IDAuNTUyMjcgMC40NDc3MSAwLjk5OTk2IDAuOTk5OTggMC45OTk5OGg2YzAuNTUyMjctMS4zZS01IDAuOTk5OTYtMC40NDc3MSAwLjk5OTk4LTAuOTk5OTgtMS4zM2UtNSAtMC41NTIyNy0wLjQ0NzcxLTAuOTk5OTYtMC45OTk5OC0wLjk5OTk4em0xMiAwYy0wLjU1MjI3IDEuM2UtNSAtMC45OTk5NiAwLjQ0NzcxLTAuOTk5OTggMC45OTk5OCAxLjNlLTUgMC41NTIyNyAwLjQ0NzcxIDAuOTk5OTYgMC45OTk5OCAwLjk5OTk4aDZjMC41NTIyNy0xLjNlLTUgMC45OTk5Ni0wLjQ0NzcxIDAuOTk5OTgtMC45OTk5OC0xLjNlLTUgLTAuNTUyMjctMC40NDc3MS0wLjk5OTk2LTAuOTk5OTgtMC45OTk5OHoiLz48cGF0aCBkPSJtMyAxOGMtMC41NTIyOCAwLTEgMC40NDc3Mi0xIDFzMC40NDc3MiAxIDEgMWgxOGMwLjU1MjI4IDAgMS0wLjQ0NzcyIDEtMXMtMC40NDc3Mi0xLTEtMXoiLz48L2c+PC9zdmc+');
+      }
+
+      &:has(.metadata-container[data-sp-separator="hidden"]) .nav-buttons-container > .clickable-icon[data-sp-nav-separator]::after {
+        mask: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PGcgb3BhY2l0eT0iLjQiPjxwYXRoIGQ9Im0zIDRjLTAuNTUyMjkgMS4zNWUtNSAtMSAwLjQ0Nzc1LTAuOTk5OTggMSAxLjM1ZS01IDAuNTUyMjcgMC40NDc3MSAwLjk5OTk2IDAuOTk5OTggMC45OTk5OGgyYzAuNTUyMjctMS4zNWUtNSAwLjk5OTk2LTAuNDQ3NzEgMC45OTk5OC0wLjk5OTk4IDIuN2UtNSAtMC41NTIyOS0wLjQ0NzY4LTEtMC45OTk5OC0xem04IDBjLTAuNTUyMzItMi42N2UtNSAtMS4wMDAxIDAuNDQ3NzMtMSAxIDEuMzVlLTUgMC41NTIyOSAwLjQ0Nzc1IDEgMSAwLjk5OTk4aDJjMC41NTIyOSAyLjY1ZS01IDEtMC40NDc2OCAxLTAuOTk5OTggMi43ZS01IC0wLjU1MjMyLTAuNDQ3NzItMS4wMDAxLTEtMXptOCAwYy0wLjU1MjI5IDEuMzNlLTUgLTEgMC40NDc3NS0wLjk5OTk4IDEgMS4zZS01IDAuNTUyMjcgMC40NDc3MSAwLjk5OTk2IDAuOTk5OTggMC45OTk5OGgyYzAuNTUyMjctMS4zM2UtNSAwLjk5OTk2LTAuNDQ3NzEgMC45OTk5OC0wLjk5OTk4IDIuN2UtNSAtMC41NTIyOS0wLjQ0NzY4LTEtMC45OTk5OC0xeiIvPjxwYXRoIGQ9Im0zIDExYy0wLjU1MjI3IDEuM2UtNSAtMC45OTk5NiAwLjQ0NzcxLTAuOTk5OTggMC45OTk5OCAxLjMzZS01IDAuNTUyMjcgMC40NDc3MSAwLjk5OTk2IDAuOTk5OTggMC45OTk5OGg2YzAuNTUyMjctMS4zZS01IDAuOTk5OTYtMC40NDc3MSAwLjk5OTk4LTAuOTk5OTgtMS4zM2UtNSAtMC41NTIyNy0wLjQ0NzcxLTAuOTk5OTYtMC45OTk5OC0wLjk5OTk4em0xMiAwYy0wLjU1MjI3IDEuM2UtNSAtMC45OTk5NiAwLjQ0NzcxLTAuOTk5OTggMC45OTk5OCAxLjNlLTUgMC41NTIyNyAwLjQ0NzcxIDAuOTk5OTYgMC45OTk5OCAwLjk5OTk4aDZjMC41NTIyNy0xLjNlLTUgMC45OTk5Ni0wLjQ0NzcxIDAuOTk5OTgtMC45OTk5OC0xLjNlLTUgLTAuNTUyMjctMC40NDc3MS0wLjk5OTk2LTAuOTk5OTgtMC45OTk5OHoiLz48cGF0aCBkPSJtMyAxOGMtMC41NTIyOCAwLTEgMC40NDc3Mi0xIDFzMC40NDc3MiAxIDEgMWgxOGMwLjU1MjI4IDAgMS0wLjQ0NzcyIDEtMXMtMC40NDc3Mi0xLTEtMXoiLz48L2c+PC9zdmc+');
+      }
+
+      &:has(.metadata-container[data-sp-separator="none"]) .nav-buttons-container > .clickable-icon[data-sp-nav-separator]::after {
+        mask: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0ibTIgMWMtMC4yNjUyIDQuMDdlLTUgLTAuNTE5NTIgMC4xMDU0Mi0wLjcwNzAzIDAuMjkyOTctMC4zOTA0NSAwLjM5MDUxLTAuMzkwNDUgMS4wMjM2IDAgMS40MTQxbDIwIDIwYzAuMzkwNTEgMC4zOTA0NSAxLjAyMzYgMC4zOTA0NSAxLjQxNDEgMCAwLjM5MDQ1LTAuMzkwNTEgMC4zOTA0NS0xLjAyMzYgMC0xLjQxNDFsLTIwLTIwYy0wLjE4NzUtMC4xODc1NS0wLjQ0MTgzLTAuMjkyOTMtMC43MDcwMy0wLjI5Mjk3eiIvPjxnIG9wYWNpdHk9Ii40Ij48cGF0aCBkPSJtMyA0Yy0wLjU1MjI5IDEuMzVlLTUgLTEgMC40NDc3NS0wLjk5OTk4IDEgMS4zNWUtNSAwLjU1MjI3IDAuNDQ3NzEgMC45OTk5NiAwLjk5OTk4IDAuOTk5OThoMmMwLjU1MjI3LTEuMzVlLTUgMC45OTk5Ni0wLjQ0NzcxIDAuOTk5OTgtMC45OTk5OCAyLjdlLTUgLTAuNTUyMjktMC40NDc2OC0xLTAuOTk5OTgtMXptOCAwYy0wLjU1MjMyLTIuNjdlLTUgLTEuMDAwMSAwLjQ0NzczLTEgMSAxLjM1ZS01IDAuNTUyMjkgMC40NDc3NSAxIDEgMC45OTk5OGgyYzAuNTUyMjkgMi42NWUtNSAxLTAuNDQ3NjggMS0wLjk5OTk4IDIuN2UtNSAtMC41NTIzMi0wLjQ0NzcyLTEuMDAwMS0xLTF6bTggMGMtMC41NTIyOSAxLjMzZS01IC0xIDAuNDQ3NzUtMC45OTk5OCAxIDEuM2UtNSAwLjU1MjI3IDAuNDQ3NzEgMC45OTk5NiAwLjk5OTk4IDAuOTk5OThoMmMwLjU1MjI3LTEuMzNlLTUgMC45OTk5Ni0wLjQ0NzcxIDAuOTk5OTgtMC45OTk5OCAyLjdlLTUgLTAuNTUyMjktMC40NDc2OC0xLTAuOTk5OTgtMXoiLz48cGF0aCBkPSJtMyAxMWMtMC41NTIyNyAxLjNlLTUgLTAuOTk5OTYgMC40NDc3MS0wLjk5OTk4IDAuOTk5OTggMS4zM2UtNSAwLjU1MjI3IDAuNDQ3NzEgMC45OTk5NiAwLjk5OTk4IDAuOTk5OThoNmMwLjU1MjI3LTEuM2UtNSAwLjk5OTk2LTAuNDQ3NzEgMC45OTk5OC0wLjk5OTk4LTEuMzNlLTUgLTAuNTUyMjctMC40NDc3MS0wLjk5OTk2LTAuOTk5OTgtMC45OTk5OHptMTIgMGMtMC41NTIyNyAxLjNlLTUgLTAuOTk5OTYgMC40NDc3MS0wLjk5OTk4IDAuOTk5OTggMS4zZS01IDAuNTUyMjcgMC40NDc3MSAwLjk5OTk2IDAuOTk5OTggMC45OTk5OGg2YzAuNTUyMjctMS4zZS01IDAuOTk5OTYtMC40NDc3MSAwLjk5OTk4LTAuOTk5OTgtMS4zZS01IC0wLjU1MjI3LTAuNDQ3NzEtMC45OTk5Ni0wLjk5OTk4LTAuOTk5OTh6Ii8+PHBhdGggZD0ibTMgMThjLTAuNTUyMjggMC0xIDAuNDQ3NzItMSAxczAuNDQ3NzIgMSAxIDFoMThjMC41NTIyOCAwIDEtMC40NDc3MiAxLTFzLTAuNDQ3NzItMS0xLTF6Ii8+PC9nPjwvc3ZnPg==');
       }
     }
 
-    &[data-sp-enum-stale] .metadata-property-value .metadata-input-longtext,
-    &[data-sp-enum-stale] .metadata-property-value input:not(.metadata-property-key-input) {
-      /* Stale value: stored value doesn't match any enum entry */
-      color: var(--text-error);
+    &[data-type="markdown"] {
+      .metadata-property-value {
+        .metadata-input-longtext,
+        .multi-select-container {
+          /*
+           *  Checkbox, Date, DateTime, and Number properties have `height` that resolves to `28px`, because
+           *  `metadata-property-value` has `min-height: 28px`. However, Text and List properties have a minimum
+           *  `height` of `29px`, due to `metadata-input-longtext` and `multi-select-container` having a
+           *  `font-size: 14px` and a `line-height: var(--line-height-normal)` (1.5), which resolves to `21px`.
+           */
+          line-height: 20px;
+        }
+      }
+    }
+
+    .metadata-container {
+      /*
+       *  metadata-container
+       *    -> metadata-content
+       *      -> metadata-properties
+       *        -> metadata-property
+       *        -> sp-metadata-group
+       *      -> sp-metadata-footer
+       */
+
+      /*
+       *  Plugin Setting -> Custom Border Style
+       */
+
+      &.sp-border-dotted,
+      &[data-sp-separator="dotted"] {
+        .metadata-property-key, .metadata-property-value { border-bottom-style: dotted; }
+      }
+
+      &.sp-border-dashed,
+      &[data-sp-separator="dashed"] {
+        .metadata-property-key, .metadata-property-value { border-bottom-style: dashed; }
+      }
+
+      &.sp-border-hidden,
+      &[data-sp-separator="hidden"] {
+        .metadata-property-key, .metadata-property-value { border-bottom-color: transparent; }
+      }
+
+      &.sp-border-none,
+      &[data-sp-separator="none"] {
+        .metadata-property-key, .metadata-property-value { border-bottom-style: none;}
+      }
+
+      /*
+       *  Plugin Setting -> Hide Empty Properties
+       */
+
+      &.sp-hide-empty .metadata-property.sp-empty,
+      &[data-hide-empty] .metadata-property[data-empty] {
+        /* Hides empty property rows when the toggle is active */
+        display: none;
+      }
+
+      /*
+       *  Properties Footer
+       */
+
+      .sp-metadata-footer {
+        /* Footer row containing "Add property" and the hide-empty toggle */
+        display: flex;
+        justify-content: space-between;
+
+        .metadata-add-button.sp-add-disabled {
+          /* "Add property" button disabled while empty properties are hidden */
+          opacity: 0.35;
+          cursor: default;
+          pointer-events: none;
+        }
+      }
+
+      .sp-metadata-group {
+        /*  Group headers injected between property groups  */
+        margin-top: 1rem;
+        margin-left: 0.25rem;
+        border-bottom: 1px solid var(--text-faint);
+        font-size: calc(var(--font-text-size) - 2px);
+        font-weight: 600;
+        line-height: 1;
+      }
+
+      .metadata-property {
+        /*
+         *  File Properties panel:
+         *    Hide the bottom borders for all group properties.
+         */
+
+        &[class*="sp-group-"] {
+          .metadata-property-key,
+          .metadata-property-value {
+            _border-bottom-color: transparent;
+          }
+        }
+
+        /*
+         * Enum dropdown styles
+         */
+
+        &[data-sp-enum] {
+          /*
+          &:hover .metadata-property-value::after {
+            border-left: 1px solid var(--background-modifier-border-focus);
+          }
+    
+          &:focus-within .metadata-property-value::after {
+            border-left: 1px solid var(--background-modifier-border-focus);
+            padding-left: 4px;
+            background-color: var(--background-modifier-border-focus);
+          }
+          */
+
+          .metadata-property-value {
+            position: relative;
+
+            &::after {
+              /* Chevron indicator — the right 28px is the dropdown trigger zone */
+              content: '⌄';
+              position: absolute;
+              top: 50%;
+              right: 0;
+              width: 14px;
+              height: 100%;
+              padding: 0 4px;
+              transform: translateY(-50%);
+              border-left: 1px solid transparent;
+              color: var(--text-muted);
+              font-size: 1.1em;
+              line-height: 1;
+              cursor: pointer;
+              pointer-events: none;
+            }
+
+          }
+
+          .metadata-input-longtext,
+          .metadata-property-value input:not(.metadata-property-key-input) {
+            /* Pad native inputs so content doesn't overlap the chevron */
+            padding-right: 28px;
+          }
+        }
+
+        &[data-sp-enum-stale] .metadata-property-value .metadata-input-longtext,
+        &[data-sp-enum-stale] .metadata-property-value input:not(.metadata-property-key-input) {
+          /* Stale value: stored value doesn't match any enum entry */
+          color: var(--text-error);
+        }
+      }
     }
   }
 }
